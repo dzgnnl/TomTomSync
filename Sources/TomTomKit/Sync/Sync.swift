@@ -58,13 +58,17 @@ public enum Exporter {
             let activity = try? TTBinParser.parse(data)
             let base = baseName(for: activity, fileID: f.id)
 
-            let ttbinURL = ttbinDir.appendingPathComponent(base + ".ttbin")
+            // The human-readable name has only second-level precision. If two
+            // activities of the same sport share that timestamp, keep both
+            // instead of silently replacing an earlier export.
+            let uniqueBase = availableBaseName(base, fileID: f.id, ttbinDir: ttbinDir, fitDir: fitDir, fileManager: fm)
+            let ttbinURL = ttbinDir.appendingPathComponent(uniqueBase + ".ttbin")
             try Data(data).write(to: ttbinURL, options: .atomic)
             let safe = (try? Data(contentsOf: ttbinURL)) == Data(data)
 
             var fitURL: URL?
             do {
-                let url = fitDir.appendingPathComponent(base + ".fit")
+                let url = fitDir.appendingPathComponent(uniqueBase + ".fit")
                 try convert(ttbin: data, to: url, serialNumber: serial)
                 fitURL = url
                 log("    → \(url.path)")
@@ -85,6 +89,18 @@ public enum Exporter {
             results.append(ExportResult(ttbin: ttbinURL, fit: fitURL, activity: activity, deletedFromWatch: deleted))
         }
         return results
+    }
+
+    private static func availableBaseName(_ base: String, fileID: UInt32, ttbinDir: URL, fitDir: URL,
+                                          fileManager: FileManager) -> String {
+        var suffix = 0
+        while true {
+            let candidate = suffix == 0 ? base : "\(base)_\(fileID.hex.dropFirst(2))\(suffix == 1 ? "" : "_\(suffix)")"
+            let rawExists = fileManager.fileExists(atPath: ttbinDir.appendingPathComponent(candidate + ".ttbin").path)
+            let fitExists = fileManager.fileExists(atPath: fitDir.appendingPathComponent(candidate + ".fit").path)
+            if !rawExists && !fitExists { return candidate }
+            suffix += 1
+        }
     }
 }
 

@@ -4,12 +4,15 @@ public enum WatchError: Error, CustomStringConvertible {
     case badResponse(String)
     case fileError(op: String, fileID: UInt32, code: UInt32)
     case verifyFailed(UInt32)
+    case fileTooLarge(fileID: UInt32, size: Int, maximum: Int)
 
     public var description: String {
         switch self {
         case .badResponse(let s): return "Unexpected response from watch: \(s)"
         case .fileError(let op, let id, let code): return "\(op) failed for file \(id.hex) (watch error \(code))"
         case .verifyFailed(let id): return "Verification of file \(id.hex) failed after writing"
+        case .fileTooLarge(let id, let size, let maximum):
+            return "File \(id.hex) is too large (\(size) bytes; maximum \(maximum))"
         }
     }
 }
@@ -42,6 +45,11 @@ public struct WatchFile: Sendable, Hashable {
 ///   [3] message type
 ///   [4...] payload; integers are big-endian
 public final class Watch {
+    /// Prevent an untrusted device from making the host reserve several GiB
+    /// based on a file-size response. Real activity/settings files are far
+    /// smaller than this limit.
+    public static let maximumFileSize = 64 * 1024 * 1024
+
     enum Msg: UInt8 {
         case openFileWrite = 0x02, deleteFile = 0x03, writeFileData = 0x04, getFileSize = 0x05
         case openFileRead = 0x06, readFileDataRequest = 0x07, readFileDataResponse = 0x09
@@ -148,7 +156,11 @@ public final class Watch {
 
         var p = [UInt8](); p.appendBE(id)
         let sizeResp = try request(.getFileSize, p)
+        guard sizeResp.count >= 16 else { throw WatchError.badResponse("short file size response") }
         let size = Int(sizeResp.u32be(12))
+        guard size <= Self.maximumFileSize else {
+            throw WatchError.fileTooLarge(fileID: id, size: size, maximum: Self.maximumFileSize)
+        }
         var data = [UInt8](); data.reserveCapacity(size)
         while data.count < size {
             let n = min(model.readChunk, size - data.count)
