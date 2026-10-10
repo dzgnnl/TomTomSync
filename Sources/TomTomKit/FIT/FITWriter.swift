@@ -8,10 +8,11 @@ import Foundation
 struct FITWriter {
     enum BaseType: UInt8 {
         case enumType = 0x00, uint8 = 0x02, uint16 = 0x84, sint32 = 0x85, uint32 = 0x86, uint32z = 0x8c
+        case string = 0x07
 
         var size: Int {
             switch self {
-            case .enumType, .uint8: return 1
+            case .enumType, .uint8, .string: return 1
             case .uint16: return 2
             case .sint32, .uint32, .uint32z: return 4
             }
@@ -20,6 +21,7 @@ struct FITWriter {
         var invalid: UInt64 {
             switch self {
             case .enumType, .uint8: return 0xff
+            case .string: return 0
             case .uint16: return 0xffff
             case .sint32: return 0x7fff_ffff
             case .uint32: return 0xffff_ffff
@@ -31,6 +33,16 @@ struct FITWriter {
     struct Field {
         let number: UInt8
         let type: BaseType
+        var size: Int
+
+        init(number: UInt8, type: BaseType) {
+            self.number = number; self.type = type; self.size = type.size
+        }
+
+        /// A null-terminated, zero-padded string field of `bytes` bytes.
+        static func string(_ number: UInt8, bytes: Int) -> Field {
+            var f = Field(number: number, type: .string); f.size = bytes; return f
+        }
     }
 
     struct Definition {
@@ -57,17 +69,24 @@ struct FITWriter {
         body.append(0)                         // little-endian
         body.appendLE(def.global)
         body.append(UInt8(def.fields.count))
-        for f in def.fields { body += [f.number, UInt8(f.type.size), f.type.rawValue] }
+        for f in def.fields { body += [f.number, UInt8(f.size), f.type.rawValue] }
     }
 
-    mutating func write(_ global: UInt16, _ values: [Int64?]) {
+    /// Values are `Int64` for numeric fields, `String` for string fields, or nil.
+    mutating func write(_ global: UInt16, _ values: [Any?]) {
         guard let def = definitions[global], let local = locals[global] else {
             preconditionFailure("message \(global) not defined")
         }
         precondition(values.count == def.fields.count)
         body.append(local)
         for (f, v) in zip(def.fields, values) {
-            let raw = v.map { UInt64(bitPattern: $0) } ?? f.type.invalid
+            if f.type == .string {
+                var bytes = Array(((v as? String) ?? "").utf8.prefix(f.size - 1))
+                bytes += [UInt8](repeating: 0, count: f.size - bytes.count)
+                body += bytes
+                continue
+            }
+            let raw = (v as? any BinaryInteger).map { UInt64(bitPattern: Int64($0)) } ?? f.type.invalid
             for i in 0..<f.type.size { body.append(UInt8(truncatingIfNeeded: raw >> (8 * UInt64(i)))) }
         }
     }

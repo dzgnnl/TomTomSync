@@ -164,6 +164,7 @@ public struct ExportedActivity: Identifiable, Sendable {
     public var sport: TTSport?
     public var distance: Double        // metres
     public var timerTime: TimeInterval
+    public var activity: Activity
 
     /// Activities too short to be worth uploading (false starts).
     public var isTrivial: Bool { timerTime < 60 || distance < 10 }
@@ -178,7 +179,7 @@ extension Exporter {
             let ttbin = ttbinDir.appendingPathComponent(fit.deletingPathExtension().lastPathComponent + ".ttbin")
             guard let data = try? Data(contentsOf: ttbin), let a = try? TTBinParser.parse([UInt8](data)) else { return nil }
             return ExportedActivity(fit: fit, start: a.startTime, sport: a.sport,
-                                    distance: a.summaryDistance ?? a.points.last?.distance ?? 0, timerTime: a.timerTime)
+                                    distance: a.distance, timerTime: a.timerTime, activity: a)
         }.sorted { $0.start > $1.start }
     }
 }
@@ -242,7 +243,7 @@ public enum SyncRunner {
                         log("Skipping \(fit.lastPathComponent) for Strava (under a minute)"); continue
                     }
                     log("Uploading \(fit.lastPathComponent) to Strava…")
-                    let r = try await client.upload(fit: fit)
+                    let r = try await client.upload(fit: fit, description: meta[fit.lastPathComponent]?.activity.stravaDescription)
                     try ledger.record(fit, activityID: r.activityID)
                     s.uploaded.append((fit, r.activityID))
                 }

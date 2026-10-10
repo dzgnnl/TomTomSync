@@ -103,8 +103,9 @@ func withProgress(_ w: Watch) {
             let out = url.deletingPathExtension().appendingPathExtension("fit")
             let a = try Exporter.convert(ttbin: [UInt8](try Data(contentsOf: url)), to: out)
             print("\(url.lastPathComponent): \(a.sport?.name ?? "?"), \(a.points.count) points, "
-                  + String(format: "%.2f km, ", (a.summaryDistance ?? 0) / 1000)
+                  + String(format: "%.2f km, ", a.distance / 1000)
                   + "\(a.laps.count) laps → \(out.lastPathComponent)")
+            print("  " + a.stravaDescription.replacingOccurrences(of: "\n", with: "\n  "))
         }
 
     case "files":
@@ -155,13 +156,15 @@ func withProgress(_ w: Watch) {
     case "upload":
         let client = try StravaClient()
         var ledger = StravaLedger()
+        let all = Exporter.exported()
+        let meta = Dictionary(all.map { ($0.fit.lastPathComponent, $0) }) { a, _ in a }
         let files: [URL] = args.isEmpty
-            ? Exporter.exported().filter { !ledger.contains($0.fit) && !$0.isTrivial }.map(\.fit).reversed()
+            ? all.filter { !ledger.contains($0.fit) && !$0.isTrivial }.map(\.fit).reversed()
             : args.map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) }
         if files.isEmpty { print("Nothing to upload") }
         for f in files {
             print("Uploading \(f.lastPathComponent)…", terminator: " "); fflush(stdout)
-            let r = try await client.upload(fit: f)
+            let r = try await client.upload(fit: f, description: meta[f.lastPathComponent]?.activity.stravaDescription)
             try ledger.record(f, activityID: r.activityID)
             switch r {
             case .created(let id): print("→ \(StravaClient.activityURL(id))")

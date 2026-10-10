@@ -177,7 +177,7 @@ public final class StravaClient: @unchecked Sendable {
     // MARK: Upload
 
     /// Uploads a FIT file and waits until Strava has processed it.
-    public func upload(fit: URL, name: String? = nil) async throws -> StravaUploadResult {
+    public func upload(fit: URL, name: String? = nil, description: String? = nil) async throws -> StravaUploadResult {
         let token = try await accessToken()
         let boundary = "TomTomSync-\(UUID().uuidString)"
         var body = Data()
@@ -187,6 +187,7 @@ public final class StravaClient: @unchecked Sendable {
         field("data_type", "fit")
         field("external_id", fit.lastPathComponent)
         if let name { field("name", name) }
+        if let description { field("description", description) }
         body += "--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"\(fit.lastPathComponent)\"\r\nContent-Type: application/octet-stream\r\n\r\n".data(using: .utf8)!
         body += try Data(contentsOf: fit)
         body += "\r\n--\(boundary)--\r\n".data(using: .utf8)!

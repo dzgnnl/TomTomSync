@@ -4,7 +4,7 @@ import Foundation
 public enum ActivityFIT {
     // Global message numbers
     private static let fileID: UInt16 = 0, session: UInt16 = 18, lap: UInt16 = 19
-    private static let record: UInt16 = 20, event: UInt16 = 21, activity: UInt16 = 34
+    private static let record: UInt16 = 20, event: UInt16 = 21, deviceInfo: UInt16 = 23, activity: UInt16 = 34
 
     private static let manufacturerTomTom: Int64 = 71
 
@@ -38,7 +38,7 @@ public enum ActivityFIT {
         let start = min(a.periods.first?.start ?? .distantFuture, a.points.first?.time ?? a.startTime)
         let end = max(a.endTime, a.points.last?.time ?? a.endTime)
         let totalDistance = a.summaryDistance ?? a.points.last?.distance ?? 0
-        let totalCalories = a.summaryCalories.map(Int64.init) ?? a.points.last?.calories.map(Int64.init)
+        let totalCalories = a.summaryCalories.map { Int64($0) } ?? a.points.last?.calories.map { Int64($0) }
         let timer = a.timerTime > 0 ? a.timerTime : end.timeIntervalSince(start)
 
         // file_id
@@ -48,14 +48,25 @@ public enum ActivityFIT {
             .init(number: 2, type: .uint16),     // product
             .init(number: 3, type: .uint32z),    // serial_number
             .init(number: 4, type: .uint32),     // time_created
+            .string(8, bytes: 32),               // product_name
         ]))
-        w.write(fileID, [4, manufacturerTomTom, Int64(a.productID), serialNumber.map(Int64.init) ?? 0, ts(a.startTime)])
+        let productName = TomTomProduct.name(a.productID)
+        w.write(fileID, [Int64(4), manufacturerTomTom, Int64(a.productID), serialNumber.map { Int64($0) } ?? 0,
+                         ts(a.startTime), productName])
+
+        // device_info for the recording device (device_index 0 = creator)
+        w.define(.init(global: deviceInfo, fields: [
+            .init(number: 253, type: .uint32), .init(number: 0, type: .uint8), .init(number: 2, type: .uint16),
+            .init(number: 4, type: .uint16), .init(number: 3, type: .uint32z), .string(27, bytes: 32),
+        ]))
+        w.write(deviceInfo, [ts(a.startTime), Int64(0), manufacturerTomTom, Int64(a.productID),
+                             serialNumber.map { Int64($0) } ?? 0, productName])
 
         // event: timer start/stop
         w.define(.init(global: event, fields: [
             .init(number: 253, type: .uint32), .init(number: 0, type: .enumType), .init(number: 1, type: .enumType),
         ]))
-        func timerEvent(_ t: Date, start: Bool) { w.write(event, [ts(t), 0, start ? 0 : 4]) }
+        func timerEvent(_ t: Date, start: Bool) { w.write(event, [ts(t), Int64(0), Int64(start ? 0 : 4)]) }
 
         // record
         w.define(.init(global: record, fields: [
@@ -80,11 +91,22 @@ public enum ActivityFIT {
                 if let next = periods.first, p.time >= next.start { timerEvent(next.start, start: true); running = true }
             }
             w.write(record, [ts(p.time), semicircles(p.latitude), semicircles(p.longitude), cm(p.distance),
-                             p.speed.map { Int64(($0 * 1000).rounded()) }, p.heartRate.map(Int64.init),
-                             p.calories.map(Int64.init)])
+                             p.speed.map { Int64(($0 * 1000).rounded()) }, p.heartRate.map { Int64($0) },
+                             p.calories.map { Int64($0) }])
         }
         if !running, let period = periods.first { timerEvent(period.start, start: true); running = true }
         if running { timerEvent(periods.first?.end ?? end, start: false) }
+
+        // Heart rate recovery: FIT's recovery_hr event carries the heart rate
+        // reached after the recovery period, so derive it from the last sample.
+        if let rec = a.hrRecovery, let lastHR = a.points.last(where: { $0.heartRate != nil })?.heartRate {
+            w.define(.init(global: event, fields: [
+                .init(number: 253, type: .uint32), .init(number: 0, type: .enumType),
+                .init(number: 1, type: .enumType), .init(number: 3, type: .uint32),
+            ]))
+            let t = (a.periods.last?.end ?? end).addingTimeInterval(60)
+            w.write(event, [ts(t), Int64(21), Int64(3), Int64(max(0, Int(lastHR) - rec.drop))])
+        }
 
         // laps
         w.define(.init(global: lap, fields: [
@@ -111,7 +133,7 @@ public enum ActivityFIT {
             let hr = a.points.filter { $0.time > prev.0 && $0.time <= l.0 }.compactMap(\.heartRate)
             w.write(lap, [ts(l.0), ts(prev.0), ms(l.0.timeIntervalSince(prev.0)), ms(max(0, l.1 - prev.1)),
                           cm(max(0, l.2 - prev.2)), max(0, l.3 - prev.3),
-                          hr.isEmpty ? nil : Int64(hr.map(Int.init).reduce(0, +) / hr.count), hr.max().map(Int64.init),
+                          hr.isEmpty ? nil : Int64(hr.map(Int.init).reduce(0, +) / hr.count), hr.max().map { Int64($0) },
                           9, 1, sport, subSport])
             prev = l
         }
@@ -130,7 +152,7 @@ public enum ActivityFIT {
             .init(number: 0, type: .enumType), .init(number: 1, type: .enumType),
         ]))
         w.write(session, [ts(end), ts(start), ms(end.timeIntervalSince(start)), ms(timer), cm(totalDistance), totalCalories,
-                          hr.isEmpty ? nil : Int64(hr.map(Int.init).reduce(0, +) / hr.count), hr.max().map(Int64.init),
+                          hr.isEmpty ? nil : Int64(hr.map(Int.init).reduce(0, +) / hr.count), hr.max().map { Int64($0) },
                           timer > 0 ? Int64((totalDistance / timer * 1000).rounded()) : nil,
                           sport, subSport, 0, Int64(lapEnds.count), 8, 1])
 

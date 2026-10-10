@@ -58,6 +58,11 @@ public struct Activity: Sendable {
     public var summaryDistance: Double?
     public var summaryDuration: TimeInterval?
     public var summaryCalories: UInt16?
+    /// Heart rate drop during the first minute after pausing, with the watch's score.
+    /// Only recorded when the activity stays paused for that minute.
+    public var hrRecovery: (score: Int, drop: Int)?
+    /// TomTom fitness points earned in this activity.
+    public var fitnessPoints: Int?
 
     public var endTime: Date { periods.last?.end ?? points.last?.time ?? startTime }
     public var timerTime: TimeInterval { periods.reduce(0) { $0 + $1.end.timeIntervalSince($1.start) } }
@@ -85,7 +90,7 @@ public enum TTBinError: Error, CustomStringConvertible {
 public enum TTBinParser {
     enum Tag: UInt8 {
         case header = 0x20, status = 0x21, gps = 0x22, heartRate = 0x25, summary = 0x27
-        case lap = 0x2f, treadmill = 0x32, swim = 0x34, gym = 0x41
+        case lap = 0x2f, treadmill = 0x32, swim = 0x34, hrRecovery = 0x3f, gym = 0x41, fitnessPoints = 0x4a
     }
 
     enum Status: UInt8 { case ready = 0, active = 1, paused = 2, stopped = 3 }
@@ -198,6 +203,13 @@ public enum TTBinParser {
                 let elapsed = TimeInterval(r.u32le(0))
                 act.laps.append(Lap(endTime: lastTime,
                                     elapsed: elapsed, distance: Double(r.f32le(4)), calories: r.u16le(8)))
+
+            case .hrRecovery where r.count >= 8:
+                let score = Int(r.i32le(0)), drop = Int(r.i32le(4))
+                if drop > 0 { act.hrRecovery = (score, drop) }
+
+            case .fitnessPoints where r.count >= 8:
+                act.fitnessPoints = Int(r.u16le(6))
 
             case .summary where r.count >= 11:
                 if let s = TTSport(rawValue: r[0]) { act.sport = s }

@@ -162,7 +162,7 @@ final class AppModel {
         defer { uploading.remove(a.id) }
         let client = StravaClient(credentials: c)
         do {
-            let r = try await client.upload(fit: a.fit)
+            let r = try await client.upload(fit: a.fit, description: a.activity.stravaDescription)
             try ledger.record(a.fit, activityID: r.activityID)
             strava = client.credentials
             stravaMessage = nil
