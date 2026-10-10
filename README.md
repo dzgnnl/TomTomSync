@@ -54,10 +54,10 @@ Tokens are stored in `~/Library/Application Support/TomTomSync/strava.json`
 - `Protocol/WatchSettings.swift` — settings manifest (utc_offset)
 - `TTBin/TTBin.swift` — ttbin parser (GPS, heart rate, laps, treadmill, swim, gym, status)
 - `FIT/` — FIT encoder and ttbin→FIT activity conversion
-- `Sync/Sync.swift` — export / QuickFix / time sync flows used by the CLI and the future app
+- `Sync/Sync.swift` — export / QuickFix / time sync flows and SyncRunner, used by the CLI and the app
 
 ## Roadmap
 
 1. ✅ CLI (`ttsync`)
-2. ✅ Menu bar app with auto-sync on plug-in
-3. ✅ Strava upload
+2. Menu bar app with auto-sync on plug-in (built; plug-in sync not yet tested on the watch)
+3. Strava upload (built; not yet tested against Strava)
