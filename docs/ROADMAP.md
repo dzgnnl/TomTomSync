@@ -1,42 +1,19 @@
-# Roadmap and open issues
+# Roadmap
 
 ## Open
 
-### Apple Developer ID signing and notarization
-*Only if there is enough interest: it needs an Apple Developer Program membership (USD 99/year).*
+- **Apple Developer ID signing and notarization.** Only if there is enough interest,
+  since it costs USD 99/year. It would give warning-free downloads, a listing in the
+  official `homebrew/cask`, Keychain storage for the Strava login, and in-app
+  auto-updates via [Sparkle](https://sparkle-project.org). `build-app.sh` already
+  supports signing ([details](DEVELOPMENT.md#releases)).
+- **Device names on Strava.** Currently shown as "TomTom GPS Watch". Needs a
+  confirmed mapping from product ID to model.
+- **Test more watches**, especially the first generation (`0x7474`) and Spark Cardio (`0x7477`).
+- **Default for "delete after export"**: consider off for new users.
+- **Relaunch after `brew upgrade`**: upgrading quits the app.
 
-What it would give:
-- downloads from the Releases page open without a Gatekeeper warning
-- a submission to the official `homebrew/cask`, so `brew install --cask tomtomsync`
-  without the tap
-- a stable code signature, so the Strava login can move to the Keychain without
-  password prompts after every update (see [SECURITY.md](../SECURITY.md))
-- a basis for automatic in-app updates with [Sparkle](https://sparkle-project.org),
-  with updates signed by its own EdDSA key
+## Maybe later
 
-The build script already supports it ([RELEASING.md](RELEASING.md)); what remains
-is the account, the CI secrets and, optionally, Sparkle.
-
-### Device names on Strava
-Strava shows a generic "TomTom GPS Watch". Each product ID (e.g. 2005) needs
-its confirmed model name, and ideally the FIT product numbers that TomTom
-MySports used.
-
-### Testing on more watches
-Only the Spark 3 Music (USB product ID `0x7475`) has been tested. Multi-Sport /
-Runner (`0x7474`, 64-byte packets) and Spark Cardio (`0x7477`) need testing.
-
-### Default for "delete after export"
-It's on by default. Consider off by default for new users.
-
-### Relaunch after `brew upgrade`
-Upgrading quits the app; the user has to start it again.
-
-## Possible later features
-
-TomTomWatch supports these, but TomTomSync doesn't yet:
-- GPX export
-- route upload
-- workouts and races
-- activity tracking (steps/sleep)
-- watch preferences
+Features TomTomWatch has: GPX export, routes, workouts and races, activity
+tracking, watch preferences.

@@ -1,48 +1,21 @@
 # Credits
 
-TomTom never published the USB protocol or file formats of its sports watches.
-Everything TomTomSync knows about them comes from people who worked it out
-themselves and shared the results. Thank you.
+TomTom never published its watch protocol. TomTomSync relies on people who
+reverse-engineered it and shared their work.
 
-## TomTomWatch (Java)
-
-- **Author:** Jorgen van der Velde ([@scubajorgen](https://github.com/scubajorgen)),
-  with contributions from Emanuele Corini, Derick Rethans and 42Bastian
-- **Source:** <https://github.com/scubajorgen/TomTomWatch>
-- **Homepage:** <http://blog.studioblueplanet.net/?page_id=566>
-
-TomTomSync started as an attempt to get TomTomWatch running on a current Mac,
-and its design comes directly from that project. TomTomWatch was the main
-reference for:
-
-- the USB HID packet format, message types and the watch's startup sequence
-- the watch file system: file IDs, listing, reading, writing and deleting files
-- the settings manifest (file `0x00850000`) and the UTC offset setting
-- the ttbin activity format and its record types, including heart rate recovery
-  and the per-second step count used for running cadence
-- the GPS QuickFix download URLs and update procedure
-
-TomTomWatch does not declare a license. TomTomSync contains none of its source
-code or data files: it is a new implementation in Swift, based on the protocol
-and format knowledge that TomTomWatch documents.
-
-## ttwatch (C, Linux)
-
-- **Author:** Ryan Binns ([@ryanbinns](https://github.com/ryanbinns))
-- **Source:** <https://github.com/ryanbinns/ttwatch>
-- **License:** MIT (below)
-
-ttwatch (2014) was the first open source tool for the TomTom GPS watches.
-TomTomSync used it as a second reference for the protocol and the ttbin format.
-
-## FIT
-
-FIT files are written with TomTomSync's own small encoder, based on Garmin's
-public [FIT protocol documentation](https://developer.garmin.com/fit/protocol/).
-The Garmin FIT SDK is only used during development, to check the output, and
-is not part of TomTomSync.
-
----
+- **[TomTomWatch](https://github.com/scubajorgen/TomTomWatch)** (Java) by Jorgen van der Velde
+  ([@scubajorgen](https://github.com/scubajorgen)), with contributions from Emanuele Corini,
+  Derick Rethans and 42Bastian. TomTomSync started as a way to run it on a modern Mac.
+  It is the main reference for the USB protocol, the watch file system, the settings
+  file, the ttbin format (including heart rate recovery and step counts) and GPS QuickFix.
+  TomTomWatch has no license. TomTomSync contains none of its code or files; it is a
+  new Swift implementation of what TomTomWatch documents.
+- **[ttwatch](https://github.com/ryanbinns/ttwatch)** (C, MIT license) by Ryan Binns:
+  the first open source TomTom watch tool (2014), and a second reference for the
+  protocol and ttbin format.
+- **FIT**: TomTomSync has its own encoder, based on Garmin's public
+  [FIT protocol](https://developer.garmin.com/fit/protocol/). The Garmin SDK is used
+  only to validate output.
 
 ### ttwatch license
 

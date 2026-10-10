@@ -1,5 +1,5 @@
 # Push a tag like v0.2.0 to build the app, publish a GitHub release and update
-# the Homebrew cask in dzgnnl/homebrew-tap. See docs/RELEASING.md.
+# the Homebrew cask in dzgnnl/homebrew-tap. See docs/DEVELOPMENT.md#releases.
 name: Release
 on:
   push:
@@ -37,7 +37,7 @@ jobs:
           TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
         run: |
           if [ -z "$TAP_TOKEN" ]; then
-            echo "::error::Secret TAP_TOKEN is not set; see docs/RELEASING.md. Add it and re-run this job."
+            echo "::error::Secret TAP_TOKEN is not set; see docs/DEVELOPMENT.md#releases. Add it and re-run this job."
             exit 1
           fi
           VERSION=${GITHUB_REF_NAME#v}
