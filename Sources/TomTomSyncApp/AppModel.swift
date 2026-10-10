@@ -102,8 +102,8 @@ final class AppModel {
         o.timeSync = timeSync
         o.stravaUpload = stravaAutoUpload && (strava?.isLoggedIn ?? false)
 
-        let logger = SyncLog { line in Task { @MainActor [weak self] in self?.append(line) } }
-        let onProgress: (Int, Int) -> Void = { done, total in
+        let logger = SyncLog { [weak self] line in Task { @MainActor [weak self] in self?.append(line) } }
+        let onProgress: (Int, Int) -> Void = { [weak self] done, total in
             Task { @MainActor [weak self] in self?.progress = total > 4096 && done < total ? Double(done) / Double(total) : nil }
         }
         do {
