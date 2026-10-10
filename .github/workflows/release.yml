@@ -25,13 +25,21 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" "build/TomTomSync-$GITHUB_REF_NAME.zip" \
-            --title "TomTomSync ${GITHUB_REF_NAME#v}" --generate-notes
+          ZIP="build/TomTomSync-$GITHUB_REF_NAME.zip"
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" "$ZIP" --clobber     # re-run of this workflow
+          else
+            gh release create "$GITHUB_REF_NAME" "$ZIP" --title "TomTomSync ${GITHUB_REF_NAME#v}" --generate-notes
+          fi
 
       - name: Update Homebrew cask
         env:
           TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
         run: |
+          if [ -z "$TAP_TOKEN" ]; then
+            echo "::error::Secret TAP_TOKEN is not set; see docs/RELEASING.md. Add it and re-run this job."
+            exit 1
+          fi
           VERSION=${GITHUB_REF_NAME#v}
           SHA=$(shasum -a 256 "build/TomTomSync-$GITHUB_REF_NAME.zip" | cut -d' ' -f1)
           git clone "https://x-access-token:$TAP_TOKEN@github.com/dzgnnl/homebrew-tap.git" tap
@@ -41,5 +49,4 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add Casks/tomtomsync.rb
-          git commit -m "tomtomsync $VERSION"
-          git push
+          git diff --cached --quiet || { git commit -m "tomtomsync $VERSION" && git push; }
