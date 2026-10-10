@@ -26,4 +26,4 @@ Please don't open a public issue.
   source and signed ad hoc. The Homebrew cask removes the quarantine flag, so
   installing from the tap means trusting this repository.
 - **Watch data is treated as untrusted.** The parser bounds-checks fields, caps
-  processing at 250,000 records per file, and is fuzz-tested.
+  processing at 2,000,000 records per file, and is fuzz-tested.

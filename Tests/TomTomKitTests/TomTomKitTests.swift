@@ -130,3 +130,25 @@ private enum TTBinBuilder {
         #expect(!items.contains { $0.name == "client_secret" })
     }
 }
+
+@Suite struct ExportTests {
+    @Test func reusesNameForSameActivityAndAvoidsOverwritingOthers() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let ttbin = root.appendingPathComponent("ttbin"), fit = root.appendingPathComponent("fit")
+        try FileManager.default.createDirectory(at: ttbin, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: fit, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let a: [UInt8] = [1, 2, 3], b: [UInt8] = [4, 5, 6]
+        func name(_ d: [UInt8], _ id: UInt32) -> String {
+            Exporter.availableBaseName("run", for: d, fileID: id, ttbinDir: ttbin, fitDir: fit)
+        }
+        #expect(name(a, 0x0091_0000) == "run")
+        try Data(a).write(to: ttbin.appendingPathComponent("run.ttbin"))
+        #expect(name(a, 0x0091_0000) == "run", "re-export of the same activity keeps its name")
+        let other = name(b, 0x0091_0001)
+        #expect(other != "run")
+        try Data(b).write(to: ttbin.appendingPathComponent(other + ".ttbin"))
+        #expect(name(b, 0x0091_0001) == other)
+    }
+}

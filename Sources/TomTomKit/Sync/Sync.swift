@@ -68,7 +68,7 @@ public enum Exporter {
             // The human-readable name has only second-level precision. If two
             // activities of the same sport share that timestamp, keep both
             // instead of silently replacing an earlier export.
-            let uniqueBase = availableBaseName(base, fileID: f.id, ttbinDir: ttbinDir, fitDir: fitDir, fileManager: fm)
+            let uniqueBase = availableBaseName(base, for: data, fileID: f.id, ttbinDir: ttbinDir, fitDir: fitDir)
             let ttbinURL = ttbinDir.appendingPathComponent(uniqueBase + ".ttbin")
             try Data(data).write(to: ttbinURL, options: .atomic)
             try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: ttbinURL.path)
@@ -99,14 +99,21 @@ public enum Exporter {
         return results
     }
 
-    private static func availableBaseName(_ base: String, fileID: UInt32, ttbinDir: URL, fitDir: URL,
-                                          fileManager: FileManager) -> String {
+    /// `base`, or `base_<fileID>[_n]` when that name belongs to a different
+    /// activity. Re-exporting the same ttbin (delete after export off) reuses
+    /// its name, so repeated syncs don't create duplicates.
+    static func availableBaseName(_ base: String, for data: [UInt8], fileID: UInt32,
+                                  ttbinDir: URL, fitDir: URL) -> String {
+        let fm = FileManager.default
         var suffix = 0
         while true {
             let candidate = suffix == 0 ? base : "\(base)_\(fileID.hex.dropFirst(2))\(suffix == 1 ? "" : "_\(suffix)")"
-            let rawExists = fileManager.fileExists(atPath: ttbinDir.appendingPathComponent(candidate + ".ttbin").path)
-            let fitExists = fileManager.fileExists(atPath: fitDir.appendingPathComponent(candidate + ".fit").path)
-            if !rawExists && !fitExists { return candidate }
+            let rawURL = ttbinDir.appendingPathComponent(candidate + ".ttbin")
+            if fm.fileExists(atPath: rawURL.path) {
+                if (try? Data(contentsOf: rawURL)) == Data(data) { return candidate }
+            } else if !fm.fileExists(atPath: fitDir.appendingPathComponent(candidate + ".fit").path) {
+                return candidate
+            }
             suffix += 1
         }
     }
