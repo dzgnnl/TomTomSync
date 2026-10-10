@@ -8,15 +8,17 @@ cask "tomtomsync" do
   desc "Sync TomTom sports watches: FIT export, GPS QuickFix, Strava upload"
   homepage "https://github.com/dzgnnl/TomTomSync"
 
-  depends_on macos: ">= :sonoma"
+  depends_on macos: :sonoma
 
   app "TomTomSync.app"
   binary "#{appdir}/TomTomSync.app/Contents/MacOS/ttsync"
 
   # The app is not signed with an Apple Developer ID yet, so Gatekeeper would
   # block the quarantined download. Installing from this tap is the trust decision.
-  postflight do
-    system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{appdir}/TomTomSync.app"]
+  postflight_steps do
+    run "/usr/bin/xattr",
+        args:           ["-dr", "com.apple.quarantine", "{{appdir}}/TomTomSync.app"],
+        writable_paths: ["{{appdir}}/TomTomSync.app"]
   end
 
   uninstall quit: "nl.takobruinsma.TomTomSync"

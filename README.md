@@ -35,12 +35,35 @@ the watch's USB cradle.
 
 ## Install
 
-There is no ready-made download yet (see [Distributing](#distributing-a-ready-made-app)),
-so for now you build the app on your own Mac. It takes about five minutes and
-you only type three commands. You don't need to know how to program.
+You don't need to know how to program, but you do type a few commands into the
+**Terminal** app (Applications → Utilities → Terminal): paste each line and press Return.
 
-1. **Install Apple's developer tools.** Open the **Terminal** app (Applications →
-   Utilities → Terminal), paste this line and press Return:
+### With Homebrew (recommended)
+
+[Homebrew](https://brew.sh) is the usual way to install free Mac tools, and it
+also keeps TomTomSync up to date.
+
+1. **Install Homebrew**, if you don't have it yet: follow the one-line instruction
+   on <https://brew.sh>. It asks for your Mac password, which is normal.
+2. **Install TomTomSync:**
+
+   ```sh
+   brew install --cask dzgnnl/tap/tomtomsync
+   ```
+
+3. **Start it:** open **TomTomSync** from your Applications folder. A runner icon
+   🏃 appears in the menu bar at the top right of the screen.
+4. **Plug in the watch.** The first time, macOS may ask whether to *allow the
+   accessory to connect*: click **Allow**. TomTomSync starts syncing about three
+   seconds later and shows a notification when it's done.
+
+**Updating:** run `brew upgrade`, then start TomTomSync again.
+
+### Building it yourself
+
+If you'd rather not use Homebrew, build the app on your own Mac. This takes about five minutes.
+
+1. **Install Apple's developer tools:**
 
    ```sh
    xcode-select --install
@@ -53,24 +76,20 @@ you only type three commands. You don't need to know how to program.
    **Code** button, then **Download ZIP**. Double-click the downloaded file to
    unpack it. You now have a `TomTomSync-main` folder in your Downloads folder.
 
-3. **Build and install.** In Terminal, paste these two lines and press Return:
+3. **Build and install:**
 
    ```sh
    cd ~/Downloads/TomTomSync-main
    scripts/build-app.sh --install
    ```
 
-   The first build takes a minute or two. When it says
-   `Installed to ~/Applications/TomTomSync.app`, you're done.
+   When it says `Installed to ~/Applications/TomTomSync.app`, you're done.
 
-4. **Start it.** Open your home folder in Finder, then the **Applications** folder
-   there (this is not the main Applications folder), and double-click
-   **TomTomSync**. A runner icon 🏃 appears in the menu bar at the top right of
-   the screen.
+4. **Start it:** open your home folder in Finder, then the **Applications** folder
+   there (this is not the main Applications folder), and double-click **TomTomSync**.
+   Then plug in the watch, as in step 4 above.
 
-5. **Plug in the watch.** The first time, macOS may ask whether to *allow the
-   accessory to connect*: click **Allow**. TomTomSync starts syncing about three
-   seconds later and shows a notification when it's done.
+To update, download the new ZIP and repeat steps 2 and 3.
 
 To start TomTomSync automatically when you log in, click the menu bar icon →
 **Settings…** → **Launch at login**.
@@ -143,10 +162,11 @@ Keep your Client Secret private, like a password.
   plug the watch in again.
 - Quit any other program that talks to the watch, such as an old MySports Connect.
 
-**"TomTomSync cannot be opened" or "Apple could not verify…".** This happens
-with a copy built on another Mac or downloaded from the internet. Go to
-**System Settings → Privacy & Security**, scroll down and click **Open Anyway**.
-You only need to do this once.
+**"TomTomSync cannot be opened" or "Apple could not verify…".** TomTomSync is
+not (yet) signed by an Apple-registered developer. Homebrew installs and
+self-built copies avoid this message. If you downloaded the ZIP from the Releases
+page yourself, go to **System Settings → Privacy & Security**, scroll down and
+click **Open Anyway**. You need to do this again for every new version.
 
 **Strava upload fails with "Authorization Error" or similar.** Open Settings, click
 **Disconnect Strava**, then connect again. Make sure *Upload your
@@ -157,7 +177,8 @@ the export worked. Click the status line in the menu for the detailed log.
 
 ## Uninstall
 
-1. Quit TomTomSync (menu bar icon → Quit) and delete `~/Applications/TomTomSync.app`.
+1. Quit TomTomSync (menu bar icon → Quit). Then run `brew uninstall --cask tomtomsync`,
+   or, if you built it yourself, delete `~/Applications/TomTomSync.app`.
 2. Optionally delete `~/Library/Application Support/TomTomSync` (your Strava login)
    and `~/TomTom` (your exported activities, so keep that one if you want your data).
 3. On <https://www.strava.com/settings/apps> you can revoke TomTomSync's access.
@@ -166,7 +187,8 @@ the export worked. Click the status line in the menu for the detailed log.
 
 ### Command line
 
-The build also creates `build/ttsync`, which does everything from Terminal:
+The `ttsync` command does everything from Terminal. Homebrew installs it
+automatically; a self-build puts it in `build/ttsync`.
 
 | Command | What it does |
 |---|---|
@@ -197,23 +219,12 @@ with only the Command Line Tools it is built for your Mac's own architecture.
 How the code is organised, how the watch protocol works and what was reverse
 engineered are described in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
-### Distributing a ready-made app
+### Releases
 
-`scripts/build-app.sh --zip` creates `build/TomTomSync-<version>.zip`, which you
-can attach to a GitHub release. Other people can use it today, but because it
-is not signed by an Apple-registered developer, macOS blocks it the first time
-and they have to click **Open Anyway** (see Troubleshooting).
-
-For a download that opens without warnings you need an
-[Apple Developer Program](https://developer.apple.com/programs/) membership
-(USD 99/year) and its *Developer ID Application* certificate. The script then
-signs and notarizes the app:
-
-```sh
-xcrun notarytool store-credentials tomtomsync   # once; asks for Apple ID + app-specific password
-SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" NOTARY_PROFILE=tomtomsync \
-  scripts/build-app.sh --zip
-```
+Pushing a version tag (`git tag v0.2.0 && git push --tags`) makes GitHub Actions
+test and build the app, publish a GitHub release and update the Homebrew cask.
+One-time setup, signing and the plans for notarization and auto-update are in
+[docs/RELEASING.md](docs/RELEASING.md). What's planned is in [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Credits
 

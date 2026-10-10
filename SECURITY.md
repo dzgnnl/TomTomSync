@@ -41,6 +41,9 @@ third-party code.
   and verified before the GPS chip is reset) and the time zone value in the settings
   file. Activities are deleted only after the exported copy has been written and read
   back. The command-line debugging commands can do more; use them with care.
-- **Unsigned builds.** Releases are not yet signed with an Apple Developer ID or
-  notarized. Only download builds from this repository's Releases page, or build
-  the app yourself.
+- **Unsigned builds.** Releases are built by GitHub Actions from the tagged
+  source, but are not yet signed with an Apple Developer ID or notarized. The
+  Homebrew cask removes macOS's quarantine flag so the app can open; by installing
+  from the tap you trust this repository's releases. Only download builds from this
+  repository's Releases page or the `dzgnnl/tap` Homebrew tap, or build the app
+  yourself.

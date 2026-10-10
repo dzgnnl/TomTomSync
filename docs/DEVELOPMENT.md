@@ -122,8 +122,6 @@ redirect and checks the `state` value. Uploads go to `POST /uploads` with
 `GET /uploads/{id}`. An upload rejected as "duplicate of …/activities/N" counts
 as already uploaded. Successful uploads are recorded in `~/TomTom/strava-uploads.json`.
 
-## Not yet done
+## Open issues
 
-- Proper model names for each product ID (Strava currently shows a generic name)
-- Testing on first-generation (`0x7474`) watches
-- Workouts, routes, races and watch preferences, which TomTomWatch supports
+See [ROADMAP.md](ROADMAP.md).
