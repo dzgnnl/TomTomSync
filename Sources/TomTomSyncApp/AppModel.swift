@@ -150,9 +150,9 @@ final class AppModel {
         }
     }
 
-    func stravaLogout() {
+    func stravaLogout() async {
         guard let c = strava else { return }
-        StravaClient(credentials: c).logout()
+        await StravaClient(credentials: c).logout()
         strava = StravaCredentials.load()
     }
 

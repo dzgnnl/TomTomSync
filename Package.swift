@@ -21,8 +21,7 @@ let package = Package(
         ),
         .testTarget(
             name: "TomTomKitTests",
-            dependencies: ["TomTomKit"],
-            resources: [.copy("Resources")]
+            dependencies: ["TomTomKit"]
         ),
     ],
     swiftLanguageModes: [.v5]

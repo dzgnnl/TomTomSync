@@ -173,7 +173,7 @@ func withProgress(_ w: Watch) {
         }
 
     case "logout":
-        if let c = StravaCredentials.load() { StravaClient(credentials: c).logout() }
+        if let c = StravaCredentials.load() { await StravaClient(credentials: c).logout() }
         print("Logged out of Strava")
 
     default:

@@ -24,8 +24,8 @@ public enum StravaError: Error, CustomStringConvertible {
 
 /// Strava API credentials and tokens.
 ///
-/// Stored in ~/Library/Application Support/TomTomSync/strava.json with 0600
-/// permissions so the CLI and the menu bar app share one login.
+/// Stored in ~/Library/Application Support/TomTomSync/strava.json (directory
+/// 0700, file 0600) so the CLI and the menu bar app share one login.
 public struct StravaCredentials: Codable, Sendable {
     public var clientID: String
     public var clientSecret: String
@@ -50,7 +50,9 @@ public struct StravaCredentials: Codable, Sendable {
 
     public func save() throws {
         let fm = FileManager.default
-        try fm.createDirectory(at: Self.url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let dir = Self.url.deletingLastPathComponent()
+        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+        try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path)
         let enc = JSONEncoder(); enc.dateEncodingStrategy = .secondsSince1970; enc.outputFormatting = .prettyPrinted
         try enc.encode(self).write(to: Self.url, options: .atomic)
         try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: Self.url.path)
@@ -111,7 +113,7 @@ public final class StravaClient: @unchecked Sendable {
 
     // MARK: OAuth
 
-    public var authorizeURL: URL {
+    public func authorizeURL(state: String) -> URL {
         var c = URLComponents(string: "https://www.strava.com/oauth/authorize")!
         c.queryItems = [
             .init(name: "client_id", value: credentials.clientID),
@@ -119,6 +121,7 @@ public final class StravaClient: @unchecked Sendable {
             .init(name: "response_type", value: "code"),
             .init(name: "approval_prompt", value: "auto"),
             .init(name: "scope", value: "read,activity:write"),
+            .init(name: "state", value: state),
         ]
         return c.url!
     }
@@ -126,8 +129,12 @@ public final class StravaClient: @unchecked Sendable {
     /// Opens the Strava consent page and waits for the browser redirect on
     /// http://localhost:8723/callback, then exchanges the code for tokens.
     public func login(open: @escaping @Sendable (URL) -> Void) async throws {
-        let callback = try await LocalCallbackServer.waitForCallback(port: Self.redirectPort) {
-            open(self.authorizeURL)
+        // Random state ties the browser redirect to this login attempt, so another
+        // local process or web page cannot inject its own authorization code.
+        let state = UUID().uuidString
+        let url = authorizeURL(state: state)
+        let callback = try await LocalCallbackServer.waitForCallback(port: Self.redirectPort, state: state) {
+            open(url)
         }
         if let err = callback["error"] { throw StravaError.authorizationDenied(err) }
         guard let code = callback["code"] else { throw StravaError.authorizationDenied("no code") }
@@ -136,7 +143,14 @@ public final class StravaClient: @unchecked Sendable {
         try await tokenRequest(["grant_type": "authorization_code", "code": code])
     }
 
-    public func logout() {
+    /// Revokes the app's access at Strava (best effort) and forgets the tokens.
+    public func logout() async {
+        if let token = try? await accessToken() {
+            var req = URLRequest(url: URL(string: "https://www.strava.com/oauth/deauthorize")!)
+            req.httpMethod = "POST"
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            _ = try? await session.data(for: req)
+        }
         credentials.accessToken = nil; credentials.refreshToken = nil; credentials.expiresAt = nil; credentials.athlete = nil
         try? credentials.save()
     }
@@ -232,7 +246,8 @@ public final class StravaClient: @unchecked Sendable {
 
 /// One-shot HTTP listener on localhost for the OAuth redirect.
 enum LocalCallbackServer {
-    static func waitForCallback(port: UInt16, timeout: TimeInterval = 300, started: @escaping @Sendable () -> Void) async throws -> [String: String] {
+    /// Requests without the expected `state` get a 400 and are otherwise ignored.
+    static func waitForCallback(port: UInt16, state: String, timeout: TimeInterval = 300, started: @escaping @Sendable () -> Void) async throws -> [String: String] {
         let params = NWParameters.tcp
         params.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: port)!)
         let listener = try NWListener(using: params)
@@ -260,16 +275,25 @@ enum LocalCallbackServer {
                     guard path.hasPrefix("/callback") else { conn.cancel(); return }
                     let items = URLComponents(string: "http://localhost" + path)?.queryItems ?? []
                     let query = Dictionary(items.map { ($0.name, $0.value ?? "") }) { a, _ in a }
+                    guard query["state"] == state else {
+                        respond(conn, status: "400 Bad Request", title: "Unexpected login request", text: "This request did not come from TomTomSync and was ignored.")
+                        return
+                    }
                     let ok = query["code"] != nil
-                    let html = "<html><body style='font-family:-apple-system;padding:3em'><h2>\(ok ? "Connected to Strava" : "Strava login failed")</h2><p>You can close this window and return to TomTomSync.</p></body></html>"
-                    let resp = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(html.utf8.count)\r\nConnection: close\r\n\r\n\(html)"
-                    conn.send(content: resp.data(using: .utf8), completion: .contentProcessed { _ in conn.cancel() })
+                    respond(conn, status: "200 OK", title: ok ? "Connected to Strava" : "Strava login failed",
+                            text: "You can close this window and return to TomTomSync.")
                     finish(.success(query))
                 }
             }
             listener.start(queue: queue)
             queue.asyncAfter(deadline: .now() + timeout) { finish(.failure(StravaError.authorizationDenied("timed out waiting for browser"))) }
         }
+    }
+
+    private static func respond(_ conn: NWConnection, status: String, title: String, text: String) {
+        let html = "<html><body style='font-family:-apple-system;padding:3em'><h2>\(title)</h2><p>\(text)</p></body></html>"
+        let resp = "HTTP/1.1 \(status)\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(html.utf8.count)\r\nConnection: close\r\n\r\n\(html)"
+        conn.send(content: resp.data(using: .utf8), completion: .contentProcessed { _ in conn.cancel() })
     }
 }
 

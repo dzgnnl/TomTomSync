@@ -98,7 +98,8 @@ public enum QuickFix {
 
     public static func download(days: Int = 7) async throws -> [UInt8] {
         let (data, resp) = try await URLSession.shared.data(from: url(days: days))
-        guard let http = resp as? HTTPURLResponse, http.statusCode == 200, data.count > 1000 else {
+        // The files are 30–70 kB; the upper bound keeps an unexpected response off the watch's flash.
+        guard let http = resp as? HTTPURLResponse, http.statusCode == 200, (1000...512 * 1024).contains(data.count) else {
             throw WatchError.badResponse("QuickFix download failed (\((resp as? HTTPURLResponse)?.statusCode ?? 0), \(data.count) bytes)")
         }
         return [UInt8](data)

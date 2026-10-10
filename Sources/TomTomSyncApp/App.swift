@@ -186,7 +186,7 @@ struct SettingsView: View {
                     Toggle("Upload new activities automatically", isOn: $model.stravaAutoUpload)
                     Text("Activities shorter than a minute are not uploaded automatically.")
                         .font(.caption).foregroundStyle(.secondary)
-                    Button("Disconnect Strava") { model.stravaLogout() }
+                    Button("Disconnect Strava") { Task { await model.stravaLogout() } }
                 } else {
                     Text("Create an API application at strava.com/settings/api with Authorization Callback Domain **localhost**, then paste its Client ID and Client Secret.")
                         .font(.caption).foregroundStyle(.secondary)

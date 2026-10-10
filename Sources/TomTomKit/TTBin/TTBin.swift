@@ -121,6 +121,9 @@ public enum TTBinParser {
             p += 3
         }
 
+        /// Distances are floats; a corrupt record can hold NaN or absurd values.
+        func metres(_ f: Float) -> Double? { f.isFinite && f >= 0 && f < 1e8 ? Double(f) : nil }
+
         func utc(local: UInt32) -> Date { Date(timeIntervalSince1970: TimeInterval(Int(local) - localOffset)) }
 
         var act = Activity(productID: productID, firmware: firmware,
@@ -176,8 +179,7 @@ public enum TTBinParser {
                 let ts = r.u32le(12)
                 guard ts != 0xFFFF_FFFF, ts != 0 else { break } // no fix yet
                 let lat = Double(r.i32le(0)) / 1e7, lon = Double(r.i32le(4)) / 1e7
-                let dist = Double(r.f32le(22))
-                lastDistance = max(lastDistance, dist)
+                if let dist = metres(r.f32le(22)) { lastDistance = max(lastDistance, dist) }
                 add(TrackPoint(time: Date(timeIntervalSince1970: TimeInterval(ts)),
                                latitude: (lat == 0 && lon == 0) ? nil : lat,
                                longitude: (lat == 0 && lon == 0) ? nil : lon,
@@ -192,11 +194,11 @@ public enum TTBinParser {
                 add(TrackPoint(time: utc(local: r.u32le(2)), heartRate: hr))
 
             case .treadmill where r.count >= 16:
-                lastDistance = max(lastDistance, Double(r.f32le(4)))
+                if let dist = metres(r.f32le(4)) { lastDistance = max(lastDistance, dist) }
                 add(TrackPoint(time: utc(local: r.u32le(0)), distance: lastDistance, calories: r.u16le(8)))
 
             case .swim where r.count >= 20:
-                lastDistance = max(lastDistance, Double(r.f32le(4)))
+                if let dist = metres(r.f32le(4)) { lastDistance = max(lastDistance, dist) }
                 add(TrackPoint(time: utc(local: r.u32le(0)), distance: lastDistance, calories: r.u16le(18)))
 
             case .gym where r.count >= 10:
@@ -205,7 +207,7 @@ public enum TTBinParser {
             case .lap where r.count >= 10:
                 let elapsed = TimeInterval(r.u32le(0))
                 act.laps.append(Lap(endTime: lastTime,
-                                    elapsed: elapsed, distance: Double(r.f32le(4)), calories: r.u16le(8)))
+                                    elapsed: elapsed, distance: metres(r.f32le(4)) ?? lastDistance, calories: r.u16le(8)))
 
             case .hrRecovery where r.count >= 8:
                 let score = Int(r.i32le(0)), drop = Int(r.i32le(4))
@@ -216,7 +218,7 @@ public enum TTBinParser {
 
             case .summary where r.count >= 11:
                 if let s = TTSport(rawValue: r[0]) { act.sport = s }
-                act.summaryDistance = Double(r.f32le(1))
+                act.summaryDistance = metres(r.f32le(1))
                 act.summaryDuration = TimeInterval(r.u32le(5))
                 act.summaryCalories = r.u16le(9)
 

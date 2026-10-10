@@ -44,11 +44,9 @@ extension Activity {
         return out
     }
 
-    /// Text for the Strava activity description: data Strava does not show itself.
+    /// Text for the Strava activity description: data Strava does not show itself
+    /// (cadence is in the FIT file, so Strava shows that natively).
     public var stravaDescription: String? {
-        var lines: [String] = []
-        if let r = hrRecovery { lines.append("Heart rate recovery: −\(r.drop) bpm in 1 min") }
-        if let c = averageCadence { lines.append("Avg cadence \(Int(c.rounded())) spm") }
-        return lines.isEmpty ? nil : lines.joined(separator: "\n")
+        hrRecovery.map { "Heart rate recovery: −\($0.drop) bpm in 1 min" }
     }
 }

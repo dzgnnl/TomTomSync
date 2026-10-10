@@ -25,11 +25,15 @@ public enum ActivityFIT {
         }
     }
 
-    private static func semicircles(_ deg: Double?) -> Int64? {
-        deg.map { Int64(($0 * 2_147_483_648.0 / 180.0).rounded()) }
+    /// `x * factor` rounded; nil (FIT "invalid") for NaN, infinity or values that
+    /// do not fit, which a corrupt ttbin can produce.
+    static func scaled(_ x: Double?, _ factor: Double) -> Int64? {
+        guard let v = x.map({ ($0 * factor).rounded() }), v.isFinite, abs(v) < 1e15 else { return nil }
+        return Int64(v)
     }
-    private static func ms(_ t: TimeInterval) -> Int64 { Int64((t * 1000).rounded()) }
-    private static func cm(_ m: Double?) -> Int64? { m.map { Int64(($0 * 100).rounded()) } }
+    private static func semicircles(_ deg: Double?) -> Int64? { scaled(deg, 2_147_483_648.0 / 180.0) }
+    private static func ms(_ t: TimeInterval) -> Int64? { scaled(t, 1000) }
+    private static func cm(_ m: Double?) -> Int64? { scaled(m, 100) }
     private static let ts = FITWriter.timestamp
 
     public static func encode(_ a: Activity, serialNumber: UInt32? = nil) -> [UInt8] {
@@ -84,7 +88,7 @@ public enum ActivityFIT {
         let cadence = a.cadenceSeries
         func strides(_ spm: Double?) -> (Int64?, Int64?) {
             guard let spm, spm > 0 else { return (nil, nil) }
-            let units = Int64((spm / 2 * 128).rounded())   // strides/min in 1/128 units
+            guard let units = scaled(spm, 64) else { return (nil, nil) }   // strides/min in 1/128 units
             return (units / 128, units % 128)
         }
 
@@ -100,7 +104,7 @@ public enum ActivityFIT {
                 if let next = periods.first, p.time >= next.start { timerEvent(next.start, start: true); running = true }
             }
             w.write(record, [ts(p.time), semicircles(p.latitude), semicircles(p.longitude), cm(p.distance),
-                             p.speed.map { Int64(($0 * 1000).rounded()) }, p.heartRate.map { Int64($0) },
+                             scaled(p.speed, 1000), p.heartRate.map { Int64($0) },
                              p.calories.map { Int64($0) }, strides(cadence[i]).0, strides(cadence[i]).1])
         }
         if !running, let period = periods.first { timerEvent(period.start, start: true); running = true }
@@ -165,7 +169,7 @@ public enum ActivityFIT {
         let avgCadence = strides(a.averageCadence)
         w.write(session, [ts(end), ts(start), ms(end.timeIntervalSince(start)), ms(timer), cm(totalDistance), totalCalories,
                           hr.isEmpty ? nil : Int64(hr.map(Int.init).reduce(0, +) / hr.count), hr.max().map { Int64($0) },
-                          timer > 0 ? Int64((totalDistance / timer * 1000).rounded()) : nil,
+                          timer > 0 ? scaled(totalDistance / timer, 1000) : nil,
                           sport, subSport, 0, Int64(lapEnds.count), 8, 1, avgCadence.0, avgCadence.1])
 
         // activity
