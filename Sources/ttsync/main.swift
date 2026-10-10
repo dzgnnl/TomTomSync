@@ -105,7 +105,7 @@ func withProgress(_ w: Watch) {
             print("\(url.lastPathComponent): \(a.sport?.name ?? "?"), \(a.points.count) points, "
                   + String(format: "%.2f km, ", a.distance / 1000)
                   + "\(a.laps.count) laps → \(out.lastPathComponent)")
-            print("  " + a.stravaDescription.replacingOccurrences(of: "\n", with: "\n  "))
+            if let d = a.stravaDescription { print("  " + d.replacingOccurrences(of: "\n", with: "\n  ")) }
         }
 
     case "files":

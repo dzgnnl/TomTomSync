@@ -31,6 +31,7 @@ public struct TrackPoint: Sendable {
     public var speed: Double?             // m/s
     public var heartRate: UInt8?
     public var calories: UInt16?          // cumulative
+    public var steps: UInt8?              // steps (running) taken in this second
 }
 
 public struct Lap: Sendable {
@@ -139,6 +140,7 @@ public enum TTBinParser {
             m.latitude = pt.latitude ?? m.latitude; m.longitude = pt.longitude ?? m.longitude
             m.distance = pt.distance ?? m.distance; m.speed = pt.speed ?? m.speed
             m.heartRate = pt.heartRate ?? m.heartRate; m.calories = pt.calories ?? m.calories
+            m.steps = pt.steps ?? m.steps
             bySecond[key] = m
         }
 
@@ -181,7 +183,8 @@ public enum TTBinParser {
                                longitude: (lat == 0 && lon == 0) ? nil : lon,
                                distance: lastDistance,
                                speed: Double(r.u16le(10)) / 100,
-                               calories: r.u16le(16)))
+                               calories: r.u16le(16),
+                               steps: r[26]))
 
             case .heartRate where r.count >= 6:
                 let hr = r[0]

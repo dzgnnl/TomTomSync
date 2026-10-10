@@ -77,11 +77,20 @@ public enum ActivityFIT {
             .init(number: 73, type: .uint32),    // enhanced_speed (mm/s)
             .init(number: 3, type: .uint8),      // heart_rate
             .init(number: 33, type: .uint16),    // calories
+            .init(number: 4, type: .uint8),      // cadence (running: strides/min)
+            .init(number: 53, type: .uint8),     // fractional_cadence (1/128)
         ]))
+        // FIT running cadence is in strides (= steps / 2) per minute.
+        let cadence = a.cadenceSeries
+        func strides(_ spm: Double?) -> (Int64?, Int64?) {
+            guard let spm, spm > 0 else { return (nil, nil) }
+            let units = Int64((spm / 2 * 128).rounded())   // strides/min in 1/128 units
+            return (units / 128, units % 128)
+        }
 
         var periods = a.periods[...]
         var running = false
-        for p in a.points {
+        for (i, p) in a.points.enumerated() {
             if !running, let period = periods.first, p.time >= period.start {
                 timerEvent(period.start, start: true); running = true
             }
@@ -92,7 +101,7 @@ public enum ActivityFIT {
             }
             w.write(record, [ts(p.time), semicircles(p.latitude), semicircles(p.longitude), cm(p.distance),
                              p.speed.map { Int64(($0 * 1000).rounded()) }, p.heartRate.map { Int64($0) },
-                             p.calories.map { Int64($0) }])
+                             p.calories.map { Int64($0) }, strides(cadence[i]).0, strides(cadence[i]).1])
         }
         if !running, let period = periods.first { timerEvent(period.start, start: true); running = true }
         if running { timerEvent(periods.first?.end ?? end, start: false) }
@@ -150,11 +159,14 @@ public enum ActivityFIT {
             .init(number: 25, type: .uint16),    // first_lap_index
             .init(number: 26, type: .uint16),    // num_laps
             .init(number: 0, type: .enumType), .init(number: 1, type: .enumType),
+            .init(number: 18, type: .uint8),     // avg_cadence
+            .init(number: 92, type: .uint8),     // avg_fractional_cadence
         ]))
+        let avgCadence = strides(a.averageCadence)
         w.write(session, [ts(end), ts(start), ms(end.timeIntervalSince(start)), ms(timer), cm(totalDistance), totalCalories,
                           hr.isEmpty ? nil : Int64(hr.map(Int.init).reduce(0, +) / hr.count), hr.max().map { Int64($0) },
                           timer > 0 ? Int64((totalDistance / timer * 1000).rounded()) : nil,
-                          sport, subSport, 0, Int64(lapEnds.count), 8, 1])
+                          sport, subSport, 0, Int64(lapEnds.count), 8, 1, avgCadence.0, avgCadence.1])
 
         // activity
         w.define(.init(global: activity, fields: [

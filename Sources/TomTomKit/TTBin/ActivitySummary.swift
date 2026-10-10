@@ -13,28 +13,42 @@ public enum TomTomProduct {
 extension Activity {
     public var distance: Double { summaryDistance ?? points.last?.distance ?? 0 }
 
-    /// Speed sports are shown as km/h, swimming per 100 m, the rest as pace per km.
-    public var averagePaceText: String? {
-        let t = timerTime
-        guard distance >= 10, t > 0 else { return nil }
-        func mmss(_ s: Double) -> String { let s = Int(s.rounded()); return String(format: "%d:%02d", s / 60, s % 60) }
-        switch sport {
-        case .cycling, .indoorCycling, .skiing, .snowboarding:
-            return String(format: "Avg speed %.1f km/h", distance / t * 3.6)
-        case .swimming:
-            return "Avg pace \(mmss(t / distance * 100)) /100m"
-        default:
-            return "Avg pace \(mmss(t / distance * 1000)) /km"
+    /// Sports where the watch's per-second "cycles" value counts steps.
+    var countsSteps: Bool { [.running, .trailRunning, .hiking].contains(sport) }
+
+    private func inPeriod(_ t: Date) -> Bool { periods.contains { t >= $0.start && t <= $0.end } }
+
+    /// Average cadence in steps per minute over moving time.
+    public var averageCadence: Double? {
+        guard countsSteps else { return nil }
+        let moving = points.filter { inPeriod($0.time) }
+        let steps = moving.compactMap(\.steps).reduce(0) { $0 + Int($1) }
+        guard steps > 0, timerTime > 0 else { return nil }
+        return Double(steps) / timerTime * 60
+    }
+
+    /// Per-point cadence in steps per minute, smoothed over a 20-second window
+    /// (the watch reports whole steps per second, i.e. 2 or 3).
+    public var cadenceSeries: [Double?] {
+        guard countsSteps else { return points.map { _ in nil } }
+        var out: [Double?] = []
+        var window: [(Date, Int)] = []
+        var sum = 0
+        for p in points {
+            guard let s = p.steps else { out.append(nil); continue }
+            window.append((p.time, Int(s))); sum += Int(s)
+            while let first = window.first, p.time.timeIntervalSince(first.0) >= 20 { sum -= first.1; window.removeFirst() }
+            let span = max(1, p.time.timeIntervalSince(window.first!.0) + 1)
+            out.append(Double(sum) / span * 60)
         }
+        return out
     }
 
     /// Text for the Strava activity description: data Strava does not show itself.
-    public var stravaDescription: String {
+    public var stravaDescription: String? {
         var lines: [String] = []
-        if let p = averagePaceText { lines.append(p) }
-        if let r = hrRecovery { lines.append("Heart rate recovery: −\(r.drop) bpm in 1 min (TomTom score \(r.score))") }
-        if let f = fitnessPoints, f > 0 { lines.append("TomTom fitness points: \(f)") }
-        lines.append("Recorded with \(TomTomProduct.name(productID))")
-        return lines.joined(separator: "\n")
+        if let r = hrRecovery { lines.append("Heart rate recovery: −\(r.drop) bpm in 1 min") }
+        if let c = averageCadence { lines.append("Avg cadence \(Int(c.rounded())) spm") }
+        return lines.isEmpty ? nil : lines.joined(separator: "\n")
     }
 }
