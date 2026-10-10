@@ -55,3 +55,13 @@ private func fixture(_ name: String) throws -> [UInt8] {
         #expect(try WatchSettings(data: s.data).utcOffset == -3600)
     }
 }
+
+@Suite struct StravaTests {
+    @Test func interpretsUploadStatus() throws {
+        #expect(try StravaClient.interpret(["status": "Your activity is still being processed."]) == nil)
+        #expect(try StravaClient.interpret(["activity_id": Int64(42)])?.activityID == 42)
+        let dup = try StravaClient.interpret(["error": "x.fit duplicate of <a href='/activities/123456' target='_blank'>Morning Run</a>"])
+        #expect(dup?.activityID == 123456)
+        #expect(throws: StravaError.self) { try StravaClient.interpret(["error": "Improperly formatted data."]) }
+    }
+}

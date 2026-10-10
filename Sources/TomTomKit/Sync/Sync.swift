@@ -154,3 +154,103 @@ public enum TimeSync {
         String(format: "UTC%@%02d:%02d", s < 0 ? "-" : "+", abs(s) / 3600, abs(s) % 3600 / 60)
     }
 }
+
+// MARK: - Exported activities on disk
+
+public struct ExportedActivity: Identifiable, Sendable {
+    public var id: String { fit.lastPathComponent }
+    public var fit: URL
+    public var start: Date
+    public var sport: TTSport?
+    public var distance: Double        // metres
+    public var timerTime: TimeInterval
+
+    /// Activities too short to be worth uploading (false starts).
+    public var isTrivial: Bool { timerTime < 60 || distance < 10 }
+}
+
+extension Exporter {
+    /// FIT files in `root/fit` with metadata from the matching ttbin, newest first.
+    public static func exported(root: URL = defaultRoot) -> [ExportedActivity] {
+        let fitDir = root.appendingPathComponent("fit"), ttbinDir = root.appendingPathComponent("ttbin")
+        let fits = (try? FileManager.default.contentsOfDirectory(at: fitDir, includingPropertiesForKeys: nil)) ?? []
+        return fits.filter { $0.pathExtension == "fit" }.compactMap { fit in
+            let ttbin = ttbinDir.appendingPathComponent(fit.deletingPathExtension().lastPathComponent + ".ttbin")
+            guard let data = try? Data(contentsOf: ttbin), let a = try? TTBinParser.parse([UInt8](data)) else { return nil }
+            return ExportedActivity(fit: fit, start: a.startTime, sport: a.sport,
+                                    distance: a.summaryDistance ?? a.points.last?.distance ?? 0, timerTime: a.timerTime)
+        }.sorted { $0.start > $1.start }
+    }
+}
+
+// MARK: - Full sync
+
+public struct SyncOptions: Sendable {
+    public var root = Exporter.defaultRoot
+    public var deleteAfterExport = true
+    public var quickFix = true
+    public var timeSync = true
+    public var stravaUpload = false
+    public init() {}
+}
+
+public struct SyncSummary: Sendable {
+    public var exported: [URL] = []
+    public var uploaded: [(URL, Int64?)] = []
+    public var quickFixUpdated = false
+    public var timeZoneUpdated = false
+    public var warnings: [String] = []
+}
+
+public enum SyncRunner {
+    /// export → QuickFix → time zone → Strava upload of the newly exported files.
+    /// Individual steps after the export log a warning instead of aborting.
+    public static func run(_ o: SyncOptions, log: SyncLog, progress: ((Int, Int) -> Void)? = nil) async throws -> SyncSummary {
+        var s = SyncSummary()
+        let quickFixData: [UInt8]?
+        if o.quickFix {
+            do { quickFixData = try await QuickFix.download(days: 7) } catch {
+                quickFixData = nil; s.warnings.append("QuickFix download failed: \(error)")
+            }
+        } else { quickFixData = nil }
+
+        // All USB work happens on one connection, closed before uploading.
+        do {
+            let w = try Watch.connect()
+            defer { w.close() }
+            w.progress = progress
+            log("Connected to TomTom \(w.model.name)")
+            let results = try Exporter.exportAll(watch: w, root: o.root, deleteAfterExport: o.deleteAfterExport, log: log)
+            s.exported = results.compactMap(\.fit)
+            if let qf = quickFixData {
+                do { try QuickFix.upload(qf, to: w, log: log); s.quickFixUpdated = true }
+                catch { s.warnings.append("QuickFix upload failed: \(error)") }
+            }
+            if o.timeSync {
+                do { s.timeZoneUpdated = try TimeSync.sync(watch: w, log: log) }
+                catch { s.warnings.append("Time sync failed: \(error)") }
+            }
+        }
+
+        if o.stravaUpload, !s.exported.isEmpty {
+            do {
+                let client = try StravaClient()
+                var ledger = StravaLedger(root: o.root)
+                let meta = Dictionary(Exporter.exported(root: o.root).map { ($0.fit.lastPathComponent, $0) }) { a, _ in a }
+                for fit in s.exported where !ledger.contains(fit) {
+                    if meta[fit.lastPathComponent]?.isTrivial ?? false {
+                        log("Skipping \(fit.lastPathComponent) for Strava (under a minute)"); continue
+                    }
+                    log("Uploading \(fit.lastPathComponent) to Strava…")
+                    let r = try await client.upload(fit: fit)
+                    try ledger.record(fit, activityID: r.activityID)
+                    s.uploaded.append((fit, r.activityID))
+                }
+            } catch {
+                s.warnings.append("Strava upload failed: \(error)")
+            }
+        }
+        for w in s.warnings { log("⚠︎ \(w)") }
+        return s
+    }
+}

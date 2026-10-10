@@ -11,7 +11,15 @@ USAGE:
                                    --delete removes them from the watch after a verified save
   ttsync quickfix [--days 3|7|14]  Download GPS QuickFix data and upload it to the watch
   ttsync timesync                  Set the watch's time zone offset to this Mac's
-  ttsync sync [--delete]           export + quickfix + timesync
+  ttsync sync [--delete]           export + quickfix + timesync (+ Strava upload when logged in)
+  ttsync strava login --client-id ID --client-secret SECRET
+                                   Connect to Strava (API app from strava.com/settings/api,
+                                   Authorization Callback Domain: localhost)
+  ttsync strava status             Show Strava login and upload status
+  ttsync strava upload [FILE.fit...]
+                                   Upload FIT files (default: everything in ~/TomTom/fit not yet
+                                   uploaded, skipping activities under a minute)
+  ttsync strava logout
   ttsync convert FILE.ttbin...     Convert ttbin files to FIT (no watch needed)
   ttsync files                     List all files on the watch (debug)
   ttsync dump FILEID OUT           Save a raw watch file, e.g. 0x00850000 (debug)
@@ -77,12 +85,16 @@ func withProgress(_ w: Watch) {
         try TimeSync.sync(watch: try connect(), log: log)
 
     case "sync":
-        let delete = flag("--delete")
-        let qf = try? await QuickFix.download(days: 7)
-        let w = try connect(); withProgress(w)
-        _ = try Exporter.exportAll(watch: w, deleteAfterExport: delete, log: log)
-        if let qf { try QuickFix.upload(qf, to: w, log: log) } else { print("⚠︎ QuickFix download failed; skipped") }
-        try TimeSync.sync(watch: w, log: log)
+        var o = SyncOptions()
+        o.deleteAfterExport = flag("--delete")
+        o.stravaUpload = StravaCredentials.load()?.isLoggedIn ?? false
+        let w = Watch.isConnected
+        if !w { throw TransportError.noDevice }
+        let s = try await SyncRunner.run(o, log: log)
+        print("Done: \(s.exported.count) exported, \(s.uploaded.count) uploaded to Strava")
+
+    case "strava":
+        try await strava()
 
     case "convert":
         guard !args.isEmpty else { print(usage); return }
@@ -106,6 +118,60 @@ func withProgress(_ w: Watch) {
         let w = try connect(); withProgress(w)
         try Data(try w.readFile(id)).write(to: URL(fileURLWithPath: args[1]))
         print("Saved \(id.hex) to \(args[1])")
+
+    default:
+        print(usage)
+    }
+}
+
+@MainActor func strava() async throws {
+    let sub = args.first ?? "status"
+    if !args.isEmpty { args.removeFirst() }
+    switch sub {
+    case "login":
+        var c = StravaCredentials.load() ?? StravaCredentials(clientID: "", clientSecret: "")
+        if let id = option("--client-id") { c.clientID = id }
+        if let secret = option("--client-secret") { c.clientSecret = secret }
+        guard !c.clientID.isEmpty, !c.clientSecret.isEmpty else { throw StravaError.notConfigured }
+        try c.save()
+        let client = StravaClient(credentials: c)
+        print("Opening Strava in your browser… (waiting for authorization)")
+        try await client.login { url in
+            let p = Process(); p.executableURL = URL(fileURLWithPath: "/usr/bin/open"); p.arguments = [url.absoluteString]
+            try? p.run()
+        }
+        print("Connected to Strava as \(client.credentials.athlete ?? "athlete")")
+
+    case "status":
+        guard let c = StravaCredentials.load() else { throw StravaError.notConfigured }
+        print(c.isLoggedIn ? "Logged in as \(c.athlete ?? "athlete")" : "Not logged in")
+        let ledger = StravaLedger()
+        for a in Exporter.exported() {
+            let state = ledger.activityID(a.fit).map { "uploaded \(StravaClient.activityURL($0))" }
+                ?? (ledger.contains(a.fit) ? "uploaded" : a.isTrivial ? "skipped (too short)" : "not uploaded")
+            print("\(a.fit.lastPathComponent)  \(state)")
+        }
+
+    case "upload":
+        let client = try StravaClient()
+        var ledger = StravaLedger()
+        let files: [URL] = args.isEmpty
+            ? Exporter.exported().filter { !ledger.contains($0.fit) && !$0.isTrivial }.map(\.fit).reversed()
+            : args.map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) }
+        if files.isEmpty { print("Nothing to upload") }
+        for f in files {
+            print("Uploading \(f.lastPathComponent)…", terminator: " "); fflush(stdout)
+            let r = try await client.upload(fit: f)
+            try ledger.record(f, activityID: r.activityID)
+            switch r {
+            case .created(let id): print("→ \(StravaClient.activityURL(id))")
+            case .duplicate(let id): print("already on Strava\(id.map { " (\(StravaClient.activityURL($0)))" } ?? "")")
+            }
+        }
+
+    case "logout":
+        if let c = StravaCredentials.load() { StravaClient(credentials: c).logout() }
+        print("Logged out of Strava")
 
     default:
         print(usage)

@@ -66,6 +66,12 @@ public final class Watch {
         return w
     }
 
+    /// Releases the USB device. Required in long-running processes: the HID
+    /// run-loop thread keeps the transport alive until it is closed.
+    public func close() { transport.close() }
+
+    public static var isConnected: Bool { HIDTransport.findWatch() != nil }
+
     // MARK: - Framing
 
     @discardableResult

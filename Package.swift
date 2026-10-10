@@ -14,6 +14,11 @@ let package = Package(
             linkerSettings: [.linkedFramework("IOKit"), .linkedFramework("CoreFoundation")]
         ),
         .executableTarget(name: "ttsync", dependencies: ["TomTomKit"]),
+        .executableTarget(
+            name: "TomTomSyncApp",
+            dependencies: ["TomTomKit"],
+            linkerSettings: [.linkedFramework("ServiceManagement"), .linkedFramework("UserNotifications")]
+        ),
         .testTarget(
             name: "TomTomKitTests",
             dependencies: ["TomTomKit"],
