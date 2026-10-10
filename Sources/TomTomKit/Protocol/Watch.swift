@@ -101,7 +101,7 @@ public final class Watch {
         }
     }
 
-    public func productID() throws -> UInt32 { try request(.getProductID).u32be(0) }
+    public func productID() throws -> UInt32 { try request(.getProductID).u32le(0) }
 
     public func firmwareVersion() throws -> String {
         String(decoding: try request(.getFirmwareVersion).prefix { $0 != 0 }, as: UTF8.self)
