@@ -142,11 +142,23 @@ public enum ActivityFIT {
             lapEnds.append((end, timer, totalDistance, totalCalories ?? 0))
         }
         var prev = (start, 0.0 as TimeInterval, 0.0, 0 as Int64)
+        var pointIndex = 0
         for l in lapEnds {
-            let hr = a.points.filter { $0.time > prev.0 && $0.time <= l.0 }.compactMap(\.heartRate)
+            while pointIndex < a.points.count && a.points[pointIndex].time <= prev.0 { pointIndex += 1 }
+            var lapHRSum = 0
+            var lapHRCount = 0
+            var lapMaxHR: UInt8?
+            while pointIndex < a.points.count && a.points[pointIndex].time <= l.0 {
+                if let hr = a.points[pointIndex].heartRate {
+                    lapHRSum += Int(hr)
+                    lapHRCount += 1
+                    lapMaxHR = max(lapMaxHR ?? hr, hr)
+                }
+                pointIndex += 1
+            }
             w.write(lap, [ts(l.0), ts(prev.0), ms(l.0.timeIntervalSince(prev.0)), ms(max(0, l.1 - prev.1)),
                           cm(max(0, l.2 - prev.2)), max(0, l.3 - prev.3),
-                          hr.isEmpty ? nil : Int64(hr.map(Int.init).reduce(0, +) / hr.count), hr.max().map { Int64($0) },
+                          lapHRCount == 0 ? nil : Int64(lapHRSum / lapHRCount), lapMaxHR.map { Int64($0) },
                           9, 1, sport, subSport])
             prev = l
         }

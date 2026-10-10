@@ -12,7 +12,8 @@ Please don't open a public issue.
   third-party code.
 - **`127.0.0.1:8723`**: runs only during Strava login (at most 5 minutes) to
   receive the OAuth redirect. A random `state` value blocks injected logins.
-- **Files**: activities in `~/TomTom`. Strava credentials are in
+- **Files**: activities in `~/TomTom/fit` and `~/TomTom/ttbin` (directories 0700;
+  newly written files 0600). Strava credentials are in
   `~/Library/Application Support/TomTomSync/strava.json` (folder 0700, file 0600).
 
 ## Known limitations
@@ -24,4 +25,5 @@ Please don't open a public issue.
 - **Releases are not notarized.** They are built by GitHub Actions from the tagged
   source and signed ad hoc. The Homebrew cask removes the quarantine flag, so
   installing from the tap means trusting this repository.
-- **Watch data is treated as untrusted.** The parser bounds-checks everything and is fuzz-tested.
+- **Watch data is treated as untrusted.** The parser bounds-checks fields, caps
+  processing at 250,000 records per file, and is fuzz-tested.

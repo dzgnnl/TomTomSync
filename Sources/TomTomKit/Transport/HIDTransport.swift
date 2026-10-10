@@ -8,6 +8,7 @@ public enum TransportError: Error, CustomStringConvertible {
     case sendFailed(IOReturn)
     case timeout
     case disconnected
+    case invalidReportSize(Int)
 
     public var description: String {
         switch self {
@@ -16,6 +17,7 @@ public enum TransportError: Error, CustomStringConvertible {
         case .sendFailed(let r): return "USB send failed (IOReturn \(String(format: "0x%08x", r)))"
         case .timeout: return "Timeout waiting for the watch to respond"
         case .disconnected: return "Watch disconnected"
+        case .invalidReportSize(let size): return "Watch reports an unsupported HID report size (\(size) bytes)"
         }
     }
 }
@@ -48,6 +50,11 @@ public enum WatchModel: Int, Sendable {
 /// libusb) means macOS keeps its own HID driver attached, so no root and no
 /// kernel-driver detaching is needed.
 public final class HIDTransport: @unchecked Sendable {
+    /// Known models use reports of 64 or 256 bytes. Keep room for descriptor
+    /// variations while refusing attacker-controlled multi-gigabyte sizes.
+    private static let maximumReportSize = 4096
+    private static let maximumQueuedReports = 64
+
     public let model: WatchModel
     public let serialNumber: String?
 
@@ -80,6 +87,9 @@ public final class HIDTransport: @unchecked Sendable {
 
         let maxIn = IOHIDDeviceGetProperty(dev, kIOHIDMaxInputReportSizeKey as CFString) as? Int ?? 0
         let maxOut = IOHIDDeviceGetProperty(dev, kIOHIDMaxOutputReportSizeKey as CFString) as? Int ?? 0
+        guard maxIn <= Self.maximumReportSize, maxOut <= Self.maximumReportSize else {
+            throw TransportError.invalidReportSize(max(maxIn, maxOut))
+        }
         self.inputBufferSize = max(maxIn, model.packetSize)
         self.outputReportSize = maxOut > 0 ? maxOut : model.packetSize
         self.inputBuffer = .allocate(capacity: inputBufferSize)
@@ -113,9 +123,10 @@ public final class HIDTransport: @unchecked Sendable {
         let t = Thread { [device, inputBuffer, inputBufferSize] in
             let rl = CFRunLoopGetCurrent()!
             self.runLoop = rl
-            IOHIDDeviceRegisterInputReportCallback(device, inputBuffer, inputBufferSize, { ctx, result, _, _, _, report, length in
+            IOHIDDeviceRegisterInputReportCallback(device, inputBuffer, inputBufferSize, { ctx, _, _, _, _, report, length in
                 guard let ctx else { return }
                 let me = Unmanaged<HIDTransport>.fromOpaque(ctx).takeUnretainedValue()
+                guard length > 0, length <= me.inputBufferSize else { return }
                 me.received(Array(UnsafeBufferPointer(start: report, count: length)))
             }, ctx)
             IOHIDDeviceRegisterRemovalCallback(device, { ctx, _, _ in
@@ -133,7 +144,11 @@ public final class HIDTransport: @unchecked Sendable {
     }
 
     private func received(_ report: [UInt8]) {
-        lock.lock(); inbox.append(report); lock.signal(); lock.unlock()
+        lock.lock()
+        if inbox.count == Self.maximumQueuedReports { inbox.removeFirst() }
+        inbox.append(report)
+        lock.signal()
+        lock.unlock()
     }
 
     private func removed() {
