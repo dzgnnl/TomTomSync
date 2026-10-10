@@ -41,6 +41,7 @@ APP=build/TomTomSync.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN/TomTomSyncApp" "$APP/Contents/MacOS/TomTomSync"
+cp "$BIN/ttsync" "$APP/Contents/MacOS/ttsync"   # Homebrew links this as `ttsync`
 cp "$BIN/ttsync" build/ttsync
 
 cat > "$APP/Contents/Info.plist" <<EOF
@@ -63,10 +64,10 @@ cat > "$APP/Contents/Info.plist" <<EOF
 EOF
 
 if [ -n "${SIGN_IDENTITY:-}" ]; then
-    codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" build/ttsync
+    codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" build/ttsync "$APP/Contents/MacOS/ttsync"
     codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$APP"
 else
-    codesign --force --sign - build/ttsync
+    codesign --force --sign - build/ttsync "$APP/Contents/MacOS/ttsync"
     codesign --force --sign - "$APP"
 fi
 echo "Built $APP and build/ttsync ($VERSION)"

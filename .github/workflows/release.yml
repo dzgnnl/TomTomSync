@@ -1,0 +1,45 @@
+# Push a tag like v0.2.0 to build the app, publish a GitHub release and update
+# the Homebrew cask in dzgnnl/homebrew-tap. See docs/RELEASING.md.
+name: Release
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # build-app.sh takes the version from the tag
+
+      - run: swift test
+
+      - name: Build
+        run: scripts/build-app.sh --zip
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "build/TomTomSync-$GITHUB_REF_NAME.zip" \
+            --title "TomTomSync ${GITHUB_REF_NAME#v}" --generate-notes
+
+      - name: Update Homebrew cask
+        env:
+          TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          SHA=$(shasum -a 256 "build/TomTomSync-$GITHUB_REF_NAME.zip" | cut -d' ' -f1)
+          git clone "https://x-access-token:$TAP_TOKEN@github.com/dzgnnl/homebrew-tap.git" tap
+          mkdir -p tap/Casks
+          scripts/update-cask.sh "$VERSION" "$SHA" > tap/Casks/tomtomsync.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/tomtomsync.rb
+          git commit -m "tomtomsync $VERSION"
+          git push
