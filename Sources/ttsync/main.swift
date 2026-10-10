@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 import TomTomKit
 
 let usage = """
@@ -12,9 +13,10 @@ USAGE:
   ttsync quickfix [--days 3|7|14]  Download GPS QuickFix data and upload it to the watch
   ttsync timesync                  Set the watch's time zone offset to this Mac's
   ttsync sync [--delete]           export + quickfix + timesync (+ Strava upload when logged in)
-  ttsync strava login --client-id ID --client-secret SECRET
+  ttsync strava login --client-id ID [--client-secret SECRET]
                                    Connect to Strava (API app from strava.com/settings/api,
-                                   Authorization Callback Domain: localhost)
+                                   Authorization Callback Domain: localhost). If omitted,
+                                   the client secret is requested without terminal echo.
   ttsync strava status             Show Strava login and upload status
   ttsync strava upload [FILE.fit...]
                                    Upload FIT files (default: everything in ~/TomTom/fit not yet
@@ -49,6 +51,16 @@ func withProgress(_ w: Watch) {
         print(String(format: "\r    %3d%%", done * 100 / max(total, 1)), terminator: done == total ? "\r" : "")
         fflush(stdout)
     }
+}
+
+/// Reads a secret from the controlling terminal without placing it in shell
+/// history or displaying it as the user types.
+func readSecret(prompt: String) throws -> String {
+    guard let value = getpass(prompt) else {
+        throw NSError(domain: "TomTomSync", code: 1,
+                      userInfo: [NSLocalizedDescriptionKey: "Could not read the client secret from the terminal"])
+    }
+    return String(cString: value)
 }
 
 @MainActor func run() async throws {
@@ -133,6 +145,7 @@ func withProgress(_ w: Watch) {
         var c = StravaCredentials.load() ?? StravaCredentials(clientID: "", clientSecret: "")
         if let id = option("--client-id") { c.clientID = id }
         if let secret = option("--client-secret") { c.clientSecret = secret }
+        else if c.clientSecret.isEmpty { c.clientSecret = try readSecret(prompt: "Strava client secret: ") }
         guard !c.clientID.isEmpty, !c.clientSecret.isEmpty else { throw StravaError.notConfigured }
         try c.save()
         let client = StravaClient(credentials: c)
