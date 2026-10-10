@@ -29,18 +29,15 @@ the Command Line Tools. `--zip` creates `build/TomTomSync-<version>.zip`.
 
 ## Releases
 
-```sh
-git tag v0.2.0 && git push origin v0.2.0
-```
+Run **Actions → Release → Run workflow** on `main` and enter the version, e.g.
+`v0.2.0`. A new version tags `main`'s latest commit; an existing tag must point
+to a commit on `main`. The source is built and tested without release
+credentials, then separate jobs publish the release and update the cask.
 
-Then run **Actions → Release → Run workflow** from `main` and enter `v0.2.0`.
-The workflow checks that the tag points to a commit on `main`, builds it without
-release credentials, then publishes from separate runners.
-
-Before the first run, configure a GitHub Actions environment named `release`
-with at least one required reviewer. Move `TAP_TOKEN` from repository secrets
-to that environment's secrets and remove the repository-level copy. The
-environment gate protects both the release write token and the Homebrew token.
+The publishing jobs use the GitHub Actions environment `release`, which only
+`main` may deploy to. `TAP_TOKEN` is an environment secret, so workflows on
+other branches can't read it. A required reviewer can be added to the
+environment for an extra approval step.
 
 [`release.yml`](../.github/workflows/release.yml) publishes the GitHub release
 and writes the cask (`packaging/homebrew/tomtomsync.rb.in`, via

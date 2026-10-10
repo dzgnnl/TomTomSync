@@ -91,8 +91,9 @@ public enum TTBinError: Error, CustomStringConvertible {
 /// (UTC + header.localOffset).
 public enum TTBinParser {
     /// Prevent pathological files from amplifying a bounded byte stream into
-    /// unbounded parser state, point arrays, and FIT output.
-    static let maximumRecordCount = 250_000
+    /// unbounded parser state, point arrays, and FIT output. A Spark writes
+    /// about 4 records per second, so this allows activities of about 5 days.
+    static let maximumRecordCount = 2_000_000
 
     enum Tag: UInt8 {
         case header = 0x20, status = 0x21, gps = 0x22, heartRate = 0x25, summary = 0x27

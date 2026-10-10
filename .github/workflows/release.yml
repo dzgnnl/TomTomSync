@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Existing vX.Y.Z tag whose commit is on main
+        description: Version tag vX.Y.Z (created on main's latest commit if it doesn't exist yet)
         required: true
         type: string
 
@@ -19,6 +19,7 @@ jobs:
     runs-on: macos-latest
     outputs:
       version: ${{ steps.verify.outputs.version }}
+      sha: ${{ steps.verify.outputs.sha }}
       sha256: ${{ steps.package.outputs.sha256 }}
     steps:
       - uses: actions/checkout@v4
@@ -37,13 +38,20 @@ jobs:
             exit 1
           fi
           git fetch origin +refs/heads/main:refs/remotes/origin/main --tags
-          TAG_SHA=$(git rev-parse --verify "refs/tags/$VERSION^{commit}")
-          if ! git merge-base --is-ancestor "$TAG_SHA" refs/remotes/origin/main; then
-            echo "::error::Release tag must point to a commit on main"
-            exit 1
+          if TAG_SHA=$(git rev-parse --verify --quiet "refs/tags/$VERSION^{commit}"); then
+            if ! git merge-base --is-ancestor "$TAG_SHA" refs/remotes/origin/main; then
+              echo "::error::Release tag must point to a commit on main"
+              exit 1
+            fi
+          else
+            # New version: tag main's latest commit locally so build-app.sh picks
+            # up the version; the publish job pushes the tag with the release.
+            TAG_SHA=$(git rev-parse refs/remotes/origin/main)
+            git tag "$VERSION" "$TAG_SHA"
           fi
           git checkout --detach "$TAG_SHA"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "sha=$TAG_SHA" >> "$GITHUB_OUTPUT"
 
       - run: swift test
 
@@ -69,7 +77,7 @@ jobs:
   publish-release:
     if: github.ref == 'refs/heads/main'
     needs: build
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     environment: release
     permissions:
       contents: write
@@ -83,18 +91,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.build.outputs.version }}
+          SHA: ${{ needs.build.outputs.sha }}
         run: |
           ZIP="artifact/TomTomSync-$VERSION.zip"
-          if gh release view "$VERSION" >/dev/null 2>&1; then
-            gh release upload "$VERSION" "$ZIP" --clobber
+          if gh release view "$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$VERSION" "$ZIP" --repo "$GITHUB_REPOSITORY" --clobber
           else
-            gh release create "$VERSION" "$ZIP" --title "TomTomSync ${VERSION#v}" --generate-notes
+            gh release create "$VERSION" "$ZIP" --repo "$GITHUB_REPOSITORY" --target "$SHA" \
+              --title "TomTomSync ${VERSION#v}" --generate-notes
           fi
 
   update-homebrew-cask:
     if: github.ref == 'refs/heads/main'
-    needs: build
-    runs-on: macos-latest
+    needs: [build, publish-release]
+    runs-on: ubuntu-latest
     environment: release
     steps:
       - uses: actions/checkout@v4
@@ -114,7 +124,7 @@ jobs:
           fi
           git clone "https://x-access-token:$TAP_TOKEN@github.com/dzgnnl/homebrew-tap.git" tap
           mkdir -p tap/Casks
-          scripts/update-cask.sh "$VERSION" "$SHA256" > tap/Casks/tomtomsync.rb
+          scripts/update-cask.sh "${VERSION#v}" "$SHA256" > tap/Casks/tomtomsync.rb
           cd tap
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
