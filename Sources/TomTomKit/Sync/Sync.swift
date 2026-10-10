@@ -34,6 +34,7 @@ public enum Exporter {
     public static func convert(ttbin data: [UInt8], to fitURL: URL, serialNumber: UInt32? = nil) throws -> Activity {
         let a = try TTBinParser.parse(data)
         try Data(ActivityFIT.encode(a, serialNumber: serialNumber)).write(to: fitURL, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fitURL.path)
         return a
     }
 
@@ -44,8 +45,14 @@ public enum Exporter {
                                  log: SyncLog) throws -> [ExportResult] {
         let fm = FileManager.default
         let ttbinDir = root.appendingPathComponent("ttbin"), fitDir = root.appendingPathComponent("fit")
-        try fm.createDirectory(at: ttbinDir, withIntermediateDirectories: true)
-        try fm.createDirectory(at: fitDir, withIntermediateDirectories: true)
+        try fm.createDirectory(at: ttbinDir, withIntermediateDirectories: true,
+                               attributes: [.posixPermissions: 0o700])
+        try fm.createDirectory(at: fitDir, withIntermediateDirectories: true,
+                               attributes: [.posixPermissions: 0o700])
+        // Tighten permissions on directories created by earlier versions too;
+        // activity exports contain precise GPS tracks.
+        try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: ttbinDir.path)
+        try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: fitDir.path)
 
         let files = try watch.listFiles(type: FileID.ttbinType)
         log("\(files.count) activit\(files.count == 1 ? "y" : "ies") on the watch")
@@ -64,6 +71,7 @@ public enum Exporter {
             let uniqueBase = availableBaseName(base, fileID: f.id, ttbinDir: ttbinDir, fitDir: fitDir, fileManager: fm)
             let ttbinURL = ttbinDir.appendingPathComponent(uniqueBase + ".ttbin")
             try Data(data).write(to: ttbinURL, options: .atomic)
+            try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: ttbinURL.path)
             let safe = (try? Data(contentsOf: ttbinURL)) == Data(data)
 
             var fitURL: URL?
@@ -113,12 +121,26 @@ public enum QuickFix {
     }
 
     public static func download(days: Int = 7) async throws -> [UInt8] {
-        let (data, resp) = try await URLSession.shared.data(from: url(days: days))
-        // The files are 30–70 kB; the upper bound keeps an unexpected response off the watch's flash.
-        guard let http = resp as? HTTPURLResponse, http.statusCode == 200, (1000...512 * 1024).contains(data.count) else {
-            throw WatchError.badResponse("QuickFix download failed (\((resp as? HTTPURLResponse)?.statusCode ?? 0), \(data.count) bytes)")
+        // Stream the response so the size limit also bounds host memory if the
+        // server or an intermediary returns an unexpectedly large body.
+        let (bytes, response) = try await URLSession.shared.bytes(from: url(days: days))
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard status == 200 else {
+            throw WatchError.badResponse("QuickFix download failed (\(status), HTTP status)")
         }
-        return [UInt8](data)
+        let maximumSize = 512 * 1024
+        var data: [UInt8] = []
+        data.reserveCapacity(70 * 1024)
+        for try await byte in bytes {
+            guard data.count < maximumSize else {
+                throw WatchError.badResponse("QuickFix download exceeded \(maximumSize) bytes")
+            }
+            data.append(byte)
+        }
+        guard data.count >= 1000 else {
+            throw WatchError.badResponse("QuickFix download was too small (\(data.count) bytes)")
+        }
+        return data
     }
 
     public static func upload(_ data: [UInt8], to watch: Watch, log: SyncLog) throws {

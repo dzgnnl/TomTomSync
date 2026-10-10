@@ -71,13 +71,14 @@ public struct Activity: Sendable {
 }
 
 public enum TTBinError: Error, CustomStringConvertible {
-    case notTTBin, truncated(Int), unknownTag(UInt8, Int)
+    case notTTBin, truncated(Int), unknownTag(UInt8, Int), tooManyRecords(Int)
 
     public var description: String {
         switch self {
         case .notTTBin: return "Not a ttbin file"
         case .truncated(let o): return "ttbin file truncated at offset \(o)"
         case .unknownTag(let t, let o): return String(format: "Unknown ttbin record tag 0x%02x at offset %d", t, o)
+        case .tooManyRecords(let maximum): return "ttbin file exceeds the \(maximum)-record processing limit"
         }
     }
 }
@@ -89,6 +90,10 @@ public enum TTBinError: Error, CustomStringConvertible {
 /// little-endian. GPS timestamps are UTC; all other timestamps are local time
 /// (UTC + header.localOffset).
 public enum TTBinParser {
+    /// Prevent pathological files from amplifying a bounded byte stream into
+    /// unbounded parser state, point arrays, and FIT output.
+    static let maximumRecordCount = 250_000
+
     enum Tag: UInt8 {
         case header = 0x20, status = 0x21, gps = 0x22, heartRate = 0x25, summary = 0x27
         case lap = 0x2f, treadmill = 0x32, swim = 0x34, hrRecovery = 0x3f, gym = 0x41, fitnessPoints = 0x4a
@@ -147,7 +152,12 @@ public enum TTBinParser {
             bySecond[key] = m
         }
 
+        var recordCount = 0
         while p < d.count {
+            guard recordCount < maximumRecordCount else {
+                throw TTBinError.tooManyRecords(maximumRecordCount)
+            }
+            recordCount += 1
             let tag = d[p]
             guard var len = lengths[tag] else { throw TTBinError.unknownTag(tag, p) }
             var body = p + 1
