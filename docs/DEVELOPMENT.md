@@ -34,10 +34,16 @@ Run **Actions → Release → Run workflow** on `main` and enter the version, e.
 to a commit on `main`. The source is built and tested without release
 credentials, then separate jobs publish the release and update the cask.
 
-The publishing jobs use the GitHub Actions environment `release`, which only
-`main` may deploy to. `TAP_TOKEN` is an environment secret, so workflows on
-other branches can't read it. A required reviewer can be added to the
-environment for an extra approval step.
+The publishing jobs use the GitHub Actions environment `release`. The
+`if: github.ref == 'refs/heads/main'` checks live in the workflow file, so a
+workflow edited on another branch could drop them; the environment settings
+are what actually protect the token. Set up (Settings → Environments):
+
+- `release` → **Deployment branches and tags: Selected branches and tags**,
+  add the branch rule `main` and nothing else.
+- `TAP_TOKEN` as an **environment secret** of `release`, with no
+  repository-level copy (repository secrets are readable from any branch).
+- Optional: a required reviewer for an extra approval step.
 
 [`release.yml`](../.github/workflows/release.yml) publishes the GitHub release
 and writes the cask (`packaging/homebrew/tomtomsync.rb.in`, via
