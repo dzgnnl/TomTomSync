@@ -6,7 +6,7 @@ Needs macOS 14+ and Swift 6 (Xcode 16+ or `xcode-select --install`). No third-pa
 
 ```sh
 swift build && swift test
-scripts/build-app.sh --install   # → ~/Applications/TomTomSync.app and build/ttsync
+scripts/build-app.sh --install   # → /Applications/TomTomSync.app and build/ttsync
 ```
 
 `build-app.sh` builds a universal binary with full Xcode and a native one with only

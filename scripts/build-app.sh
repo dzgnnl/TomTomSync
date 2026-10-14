@@ -3,7 +3,10 @@
 # binaries (Apple Silicon + Intel) when Xcode is installed.
 #
 # Usage: scripts/build-app.sh [--install] [--zip]
-#   --install  copy the app to ~/Applications (and quit the running copy first)
+#   --install  copy the app to /Applications (and quit the running copy first).
+#              Not ~/Applications: macOS 27's menu bar service then attributes the
+#              menu bar item to the process name instead of the bundle ID, which
+#              breaks menu bar managers such as Bartender.
 #   --zip      also create build/TomTomSync-<version>.zip for sharing
 #
 # Signing: by default the app is signed ad hoc, which is fine on the Mac that
@@ -43,16 +46,18 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN/TomTomSyncApp" "$APP/Contents/MacOS/TomTomSync"
 cp "$BIN/ttsync" "$APP/Contents/MacOS/ttsync"   # Homebrew links this as `ttsync`
 cp "$BIN/ttsync" build/ttsync
+cp packaging/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"   # from scripts/make-icon.swift
 
 cat > "$APP/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleIdentifier</key><string>nl.takobruinsma.TomTomSync</string>
+    <key>CFBundleIdentifier</key><string>nl.dzgn.TomTomSync</string>
     <key>CFBundleName</key><string>TomTomSync</string>
     <key>CFBundleDisplayName</key><string>TomTomSync</string>
     <key>CFBundleExecutable</key><string>TomTomSync</string>
+    <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>$SHORT_VERSION</string>
     <key>CFBundleVersion</key><string>$VERSION</string>
@@ -86,9 +91,8 @@ if [ "$ZIP" = 1 ]; then
 fi
 
 if [ "$INSTALL" = 1 ]; then
-    mkdir -p "$HOME/Applications"
     pkill -x TomTomSync 2>/dev/null || true
-    rm -rf "$HOME/Applications/TomTomSync.app"
-    cp -R "$APP" "$HOME/Applications/"
-    echo "Installed to ~/Applications/TomTomSync.app"
+    rm -rf /Applications/TomTomSync.app
+    cp -R "$APP" /Applications/
+    echo "Installed to /Applications/TomTomSync.app"
 fi

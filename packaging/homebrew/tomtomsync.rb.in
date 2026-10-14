@@ -21,10 +21,11 @@ cask "tomtomsync" do
         writable_paths: ["{{appdir}}/TomTomSync.app"]
   end
 
-  uninstall quit: "nl.takobruinsma.TomTomSync"
+  uninstall quit: "nl.dzgn.TomTomSync"
 
   zap trash: [
     "~/Library/Application Support/TomTomSync",
-    "~/Library/Preferences/nl.takobruinsma.TomTomSync.plist",
+    "~/Library/Preferences/nl.dzgn.TomTomSync.plist",
+    "~/Library/Preferences/nl.takobruinsma.TomTomSync.plist", # bundle ID up to v0.1.0
   ]
 end

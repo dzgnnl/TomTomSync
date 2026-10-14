@@ -1,28 +1,110 @@
+import AppKit
 import SwiftUI
 import TomTomKit
 
+/// Plain AppKit entry point. A SwiftUI `App` needs at least one scene, and with
+/// only a `Settings` scene macOS showed an empty settings window on launch.
 @main
-struct TomTomSyncApp: App {
-    @State private var model = AppModel()
+@MainActor
+enum TomTomSyncApp {
+    static let delegate = AppDelegate()
 
-    var body: some Scene {
-        MenuBarExtra {
-            MenuView(model: model)
-        } label: {
-            Image(systemName: model.phase == .syncing ? "arrow.triangle.2.circlepath" : "figure.run")
-                .symbolRenderingMode(.hierarchical)
-                .opacity(model.watchConnected || model.phase == .syncing ? 1 : 0.6)
-        }
-        .menuBarExtraStyle(.window)
+    static func main() {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        app.delegate = delegate
+        app.mainMenu = mainMenu()
+        app.run()
+    }
 
-        Settings {
-            SettingsView(model: model)
+    /// Never shown (the app has no menu bar of its own), but its key equivalents
+    /// make ⌘C/⌘V/⌘A work in text fields, ⌘W close the settings window and ⌘Q quit.
+    private static func mainMenu() -> NSMenu {
+        let main = NSMenu()
+        func submenu(_ title: String, _ items: [(String, Selector, String)]) {
+            let menu = NSMenu(title: title)
+            for (t, action, key) in items { menu.addItem(withTitle: t, action: action, keyEquivalent: key) }
+            main.addItem(withTitle: title, action: nil, keyEquivalent: "").submenu = menu
         }
+        submenu("TomTomSync", [("Quit TomTomSync", #selector(NSApplication.terminate(_:)), "q")])
+        submenu("File", [("Close", #selector(NSWindow.performClose(_:)), "w")])
+        submenu("Edit", [("Undo", Selector(("undo:")), "z"), ("Redo", Selector(("redo:")), "Z"),
+                         ("Cut", #selector(NSText.cut(_:)), "x"), ("Copy", #selector(NSText.copy(_:)), "c"),
+                         ("Paste", #selector(NSText.paste(_:)), "v"), ("Select All", #selector(NSText.selectAll(_:)), "a")])
+        return main
+    }
+}
+
+/// Owns the menu bar item. An `NSStatusItem` with a fixed `autosaveName` (unlike
+/// SwiftUI's `MenuBarExtra`) gives the item a stable identity, so menu bar
+/// managers such as Bartender can recognize it and remember where it goes.
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    private let model = AppModel()
+    private var statusItem: NSStatusItem!
+    private let popover = NSPopover()
+    private var settingsWindow: NSWindow?
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        statusItem.autosaveName = "TomTomSync"
+        statusItem.button?.target = self
+        statusItem.button?.action = #selector(togglePopover)
+        statusItem.button?.setAccessibilityLabel("TomTomSync")
+
+        let content = NSHostingController(rootView: MenuView(model: model) { [weak self] in self?.showSettings() })
+        content.sizingOptions = .preferredContentSize
+        popover.contentViewController = content
+        popover.behavior = .transient
+
+        updateIcon()
+    }
+
+    // Closing the settings window must not quit a menu bar app.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    /// Redraws the icon whenever the sync phase or connection state changes.
+    private func updateIcon() {
+        withObservationTracking {
+            let syncing = model.phase == .syncing
+            let image = NSImage(systemSymbolName: syncing ? "arrow.triangle.2.circlepath" : "figure.run",
+                                accessibilityDescription: "TomTomSync")
+            image?.isTemplate = true
+            statusItem.button?.image = image
+            statusItem.button?.appearsDisabled = !(model.watchConnected || syncing)
+        } onChange: {
+            Task { @MainActor [weak self] in self?.updateIcon() }
+        }
+    }
+
+    @objc private func togglePopover() {
+        guard let button = statusItem.button else { return }
+        if popover.isShown {
+            popover.performClose(nil)
+        } else {
+            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            popover.contentViewController?.view.window?.makeKey()
+        }
+    }
+
+    private func showSettings() {
+        popover.performClose(nil)
+        if settingsWindow == nil {
+            let w = NSWindow(contentViewController: NSHostingController(rootView: SettingsView(model: model)))
+            w.title = "TomTomSync Settings"
+            w.styleMask = [.titled, .closable]
+            w.isReleasedWhenClosed = false
+            w.center()
+            settingsWindow = w
+        }
+        NSApp.activate()
+        settingsWindow?.makeKeyAndOrderFront(nil)
     }
 }
 
 struct MenuView: View {
     @Bindable var model: AppModel
+    var openSettings: () -> Void
     @State private var showLog = false
 
     var body: some View {
@@ -105,8 +187,7 @@ struct MenuView: View {
         HStack {
             Button("Open Folder") { model.openFolder() }
             Spacer()
-            SettingsLink { Text("Settings…") }
-                .simultaneousGesture(TapGesture().onEnded { NSApp.activate() })
+            Button("Settings…", action: openSettings)
             Button("Quit") { NSApp.terminate(nil) }
         }
         .buttonStyle(.borderless)
