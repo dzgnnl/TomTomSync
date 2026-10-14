@@ -94,8 +94,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             w.title = "TomTomSync Settings"
             w.styleMask = [.titled, .closable]
             w.isReleasedWhenClosed = false
-            w.center()
             settingsWindow = w
+        }
+        // The window starts at the hosting view's initial (empty) frame; size it
+        // to the form, whose height differs with and without a Strava login.
+        if let w = settingsWindow, !w.isVisible, let view = w.contentViewController?.view {
+            w.setContentSize(view.fittingSize)
+            w.center()
         }
         NSApp.activate()
         settingsWindow?.makeKeyAndOrderFront(nil)
