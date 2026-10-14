@@ -39,10 +39,12 @@ enum TomTomSyncApp {
 /// SwiftUI's `MenuBarExtra`) gives the item a stable identity, so menu bar
 /// managers such as Bartender can recognize it and remember where it goes.
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let model = AppModel()
     private var statusItem: NSStatusItem!
-    private let popover = NSPopover()
+    /// Created per opening: a closed NSPopover keeps its (hidden) window at
+    /// menu bar level, which Bartender lists as a second TomTomSync item.
+    private var popover: NSPopover?
     private var settingsWindow: NSWindow?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -51,11 +53,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.button?.target = self
         statusItem.button?.action = #selector(togglePopover)
         statusItem.button?.setAccessibilityLabel("TomTomSync")
-
-        let content = NSHostingController(rootView: MenuView(model: model) { [weak self] in self?.showSettings() })
-        content.sizingOptions = .preferredContentSize
-        popover.contentViewController = content
-        popover.behavior = .transient
 
         updateIcon()
     }
@@ -79,16 +76,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func togglePopover() {
         guard let button = statusItem.button else { return }
-        if popover.isShown {
+        if let popover {
             popover.performClose(nil)
-        } else {
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            popover.contentViewController?.view.window?.makeKey()
+            return
         }
+        let content = NSHostingController(rootView: MenuView(model: model) { [weak self] in self?.showSettings() })
+        content.sizingOptions = .preferredContentSize
+        let p = NSPopover()
+        p.contentViewController = content
+        p.behavior = .transient
+        p.delegate = self
+        popover = p
+        p.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        content.view.window?.makeKey()
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        popover?.contentViewController = nil
+        popover = nil
     }
 
     private func showSettings() {
-        popover.performClose(nil)
+        popover?.performClose(nil)
         if settingsWindow == nil {
             let w = NSWindow(contentViewController: NSHostingController(rootView: SettingsView(model: model)))
             w.title = "TomTomSync Settings"
