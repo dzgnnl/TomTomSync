@@ -40,6 +40,7 @@ final class AppModel {
 
     init() {
         let d = UserDefaults.standard
+        Self.migrateDefaults(into: d)
         d.register(defaults: ["autoSync": true, "deleteAfterExport": true, "quickFix": true,
                               "timeSync": true, "stravaAutoUpload": true])
         autoSync = d.bool(forKey: "autoSync")
@@ -55,6 +56,16 @@ final class AppModel {
         monitor = WatchMonitor { [weak self] connected in
             Task { @MainActor in self?.watchChanged(connected) }
         }
+    }
+
+    /// Up to v0.1.0 the bundle ID was nl.takobruinsma.TomTomSync; carry its
+    /// settings over once.
+    private static func migrateDefaults(into d: UserDefaults) {
+        let old = "nl.takobruinsma.TomTomSync"
+        guard Bundle.main.bundleIdentifier != old, !d.bool(forKey: "migratedDefaults"),
+              let values = UserDefaults.standard.persistentDomain(forName: old) else { return }
+        for (k, v) in values where d.object(forKey: k) == nil && !k.hasPrefix("NS") { d.set(v, forKey: k) }
+        d.set(true, forKey: "migratedDefaults")
     }
 
     private func save(_ key: String, _ v: Bool) { UserDefaults.standard.set(v, forKey: key) }
