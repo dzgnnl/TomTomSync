@@ -2,6 +2,9 @@
 
 ## Open
 
+- **Shared Strava app** ([#6](https://github.com/dzgnnl/TomTomSync/issues/6)). Connect
+  to Strava with one click instead of creating your own API application; a small
+  token relay keeps the client secret out of the app.
 - **Music and podcast sync** ([#1](https://github.com/dzgnnl/TomTomSync/issues/1)).
   Music watches mount as a FAT32 drive with m3u8 playlists, so this needs no USB
   protocol work. Sources: Music.app playlists, a folder, podcast feeds.
