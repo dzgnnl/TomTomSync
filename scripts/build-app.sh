@@ -4,9 +4,12 @@
 #
 # Usage: scripts/build-app.sh [--install] [--zip]
 #   --install  copy the app to /Applications (and quit the running copy first).
-#              Not ~/Applications: macOS 27's menu bar service then attributes the
-#              menu bar item to the process name instead of the bundle ID, which
-#              breaks menu bar managers such as Bartender.
+#              Prefer /Applications over ~/Applications: from there macOS 27's
+#              menu bar service attributes the menu bar item to the process name
+#              instead of the bundle ID, which breaks menu bar managers such as
+#              Bartender. Without write access to /Applications (a standard
+#              account) it falls back to ~/Applications. Set INSTALL_DIR to
+#              choose another folder.
 #   --zip      also create build/TomTomSync-<version>.zip for sharing
 #
 # Signing: by default the app is signed ad hoc, which is fine on the Mac that
@@ -91,8 +94,15 @@ if [ "$ZIP" = 1 ]; then
 fi
 
 if [ "$INSTALL" = 1 ]; then
+    DEST=${INSTALL_DIR:-/Applications}
+    if [ -z "${INSTALL_DIR:-}" ] && [ ! -w /Applications ]; then
+        DEST="$HOME/Applications"
+        echo "No write access to /Applications; installing to $DEST instead." >&2
+        echo "Menu bar managers such as Bartender may not track the icon from there." >&2
+    fi
+    mkdir -p "$DEST"
     pkill -x TomTomSync 2>/dev/null || true
-    rm -rf /Applications/TomTomSync.app
-    cp -R "$APP" /Applications/
-    echo "Installed to /Applications/TomTomSync.app"
+    rm -rf "$DEST/TomTomSync.app"
+    cp -R "$APP" "$DEST/"
+    echo "Installed to $DEST/TomTomSync.app"
 fi
