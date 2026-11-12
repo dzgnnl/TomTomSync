@@ -9,7 +9,7 @@ MySports is gone. When you plug in the watch, it:
 - sets the watch's time zone
 - clears the watch after a verified export (optional)
 
-Works with the Spark, Spark 3, Runner 2/3 and Adventurer; tested on a Spark 3 Music.
+Works with the Spark, Spark 3, Runner 2/3 and Adventurer; tested on a Spark Music.
 First-generation Multi-Sport/Runner watches should work but are untested.
 Requires macOS 14 or newer.
 
