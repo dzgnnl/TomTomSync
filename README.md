@@ -37,7 +37,8 @@ Requires macOS 14 or newer.
 
 ## Connect Strava
 
-Strava requires every user to create their own free API application:
+For now, you create your own free Strava API application. A shared TomTomSync
+app would need a server to keep its secret safe; that may come later ([#6](https://github.com/dzgnnl/TomTomSync/issues/6)).
 
 1. At <https://www.strava.com/settings/api>, create an application. Use any name
    and website, category **Data Importer**, and **Authorization Callback Domain** `localhost`.
