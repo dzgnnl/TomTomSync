@@ -7,6 +7,7 @@ public enum StravaRouteSync {
     public struct Summary: Sendable {
         public var downloaded: [String] = []
         public var removed: [String] = []
+        public var failed: [String] = []
         public var unchanged = 0
     }
 
@@ -49,6 +50,10 @@ public enum StravaRouteSync {
             index[id] = nil
             summary.removed.append(entry.file)
         }
+        // The index is saved after every change, so a failure later on never
+        // leaves a downloaded file untracked (it would come back as a duplicate
+        // and never be cleaned up).
+        try saveIndex(index, root: root)
 
         let taken = { Set(index.values.map(\.file)) }
         for r in wanted {
@@ -56,8 +61,16 @@ public enum StravaRouteSync {
             if let existing, existing.updated == r.updatedAt, fm.fileExists(atPath: dir.appendingPathComponent(existing.file).path) {
                 summary.unchanged += 1; continue
             }
-            let gpx = try await client.routeGPX(id: r.id)
-            _ = try GPX.parse(gpx, fallbackName: r.name)   // don't store something the sync can't read
+            // One route failing (deleted on Strava, unreadable GPX) doesn't stop the others.
+            let gpx: Data
+            do {
+                gpx = try await client.routeGPX(id: r.id)
+                _ = try GPX.parse(gpx, fallbackName: r.name)   // don't store something the sync can't read
+            } catch {
+                log("⚠︎ Strava route \(r.name) skipped: \(error)")
+                summary.failed.append(r.name)
+                continue
+            }
             if let existing { try? fm.removeItem(at: dir.appendingPathComponent(existing.file)) }
             let file = fileName(r.name, taken: taken().subtracting(existing.map { [$0.file] } ?? []), in: dir)
             let url = dir.appendingPathComponent(file)
@@ -65,10 +78,10 @@ public enum StravaRouteSync {
             // The selection ranks by creation date: use the route's.
             try? fm.setAttributes([.creationDate: r.createdAt, .modificationDate: r.updatedAt], ofItemAtPath: url.path)
             index[r.id] = Entry(file: file, updated: r.updatedAt)
+            try saveIndex(index, root: root)
             summary.downloaded.append(r.name)
             log("Strava route \(r.name) downloaded")
         }
-        try saveIndex(index, root: root)
         if !summary.removed.isEmpty { log("\(summary.removed.count) Strava route(s) no longer starred, removed") }
         return summary
     }

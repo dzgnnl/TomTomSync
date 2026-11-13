@@ -264,6 +264,7 @@ private func spurRoute(points: Int = 2000) -> Route {
 final class FakeStrava: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var routesJSON = "[]"
     nonisolated(unsafe) static var gpxRequests: [String] = []
+    nonisolated(unsafe) static var failingIDs: Set<String> = []
 
     override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "www.strava.com" }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -276,7 +277,8 @@ final class FakeStrava: URLProtocol, @unchecked Sendable {
         } else if path.hasSuffix("/export_gpx") {
             let id = path.split(separator: "/").dropLast().last.map(String.init) ?? ""
             Self.gpxRequests.append(id)
-            body = GPX.write(Route(name: "Route \(id)", segments: [[pt(52, 4.9), pt(52.01, 4.91)]]))
+            if Self.failingIDs.contains(id) { status = 404 }
+            else { body = GPX.write(Route(name: "Route \(id)", segments: [[pt(52, 4.9), pt(52.01, 4.91)]])) }
         } else { status = 404 }
         client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!,
                             cacheStoragePolicy: .notAllowed)
@@ -332,6 +334,7 @@ private func route(_ id: String, _ name: String, type: Int, starred: Bool = true
         FakeStrava.routesJSON = "[" + route("1", "Amstel/loop", type: 2, created: "2024-01-01T10:00:00Z") + ","
             + route("2", "Ride", type: 1, created: "2024-01-02T10:00:00Z") + "]"
         FakeStrava.gpxRequests = []
+        FakeStrava.failingIDs = []
         var s = try await StravaRouteSync.sync(client: client, kinds: [.run], root: root, log: SyncLog { _ in })
         #expect(s.downloaded == ["Amstel/loop"])
         #expect(try files() == ["Amstel-loop.gpx", "Mine.gpx"])
@@ -353,6 +356,34 @@ private func route(_ id: String, _ name: String, type: Int, starred: Bool = true
         s = try await StravaRouteSync.sync(client: client, kinds: [], root: root, log: SyncLog { _ in })
         #expect(s.removed == ["Amstel.gpx"])
         #expect(try files() == ["Mine.gpx"])
+    }
+
+    @Test func keepsGoingAndTracksFilesWhenOneRouteFails() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("strava-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [FakeStrava.self]
+        var creds = StravaCredentials(clientID: "1", clientSecret: "s")
+        creds.accessToken = "t"; creds.refreshToken = "r"; creds.expiresAt = Date().addingTimeInterval(3600); creds.athleteID = 7
+        let client = StravaClient(credentials: creds, session: URLSession(configuration: config))
+
+        // Newest first: 3 downloads, 2 fails, 1 downloads.
+        FakeStrava.routesJSON = "[" + [route("1", "Old", type: 2, created: "2024-01-01T10:00:00Z"),
+                                       route("2", "Broken", type: 2, created: "2024-01-02T10:00:00Z"),
+                                       route("3", "New", type: 2, created: "2024-01-03T10:00:00Z")].joined(separator: ",") + "]"
+        FakeStrava.gpxRequests = []
+        FakeStrava.failingIDs = ["2"]
+        let s = try await StravaRouteSync.sync(client: client, kinds: [.run], root: root, log: SyncLog { _ in })
+        #expect(s.downloaded == ["New", "Old"] && s.failed == ["Broken"])
+        #expect(Set(StravaRouteSync.loadIndex(root: root).keys) == ["1", "3"])
+
+        // Next time only the failed one is tried again.
+        FakeStrava.gpxRequests = []
+        FakeStrava.failingIDs = []
+        let again = try await StravaRouteSync.sync(client: client, kinds: [.run], root: root, log: SyncLog { _ in })
+        #expect(again.downloaded == ["Broken"] && FakeStrava.gpxRequests == ["2"] && again.unchanged == 2)
+        let files = try FileManager.default.contentsOfDirectory(atPath: RouteSync.stravaFolder(root: root).path).filter { $0.hasSuffix(".gpx") }
+        #expect(files.sorted() == ["Broken.gpx", "New.gpx", "Old.gpx"])
     }
 
     @Test func storesSettings() throws {
