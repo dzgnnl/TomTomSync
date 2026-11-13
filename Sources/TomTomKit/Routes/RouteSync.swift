@@ -157,7 +157,7 @@ public enum RouteSync {
 
         let files = try readWatchRoutes(watch)
         let onWatch = files.mapValues(\.route)
-        let serial = watch.transport.serialNumber ?? "watch"
+        let serial = pathSafe(serial: watch.transport.serialNumber)
         let marker = dir.appendingPathComponent(".imported-\(serial)")
         var pending: [(URL, Route)] = []   // dry run: imports that would be saved
         let firstSync = !fm.fileExists(atPath: marker.path)
@@ -230,6 +230,15 @@ public enum RouteSync {
         }
         if plan.changes == 0 { log("Routes up to date (\(summary.onWatch.count) on the watch)") }
         return summary
+    }
+
+    /// The serial as a file name part: letters, digits, "-" and "_" only, so a
+    /// device can't steer the marker or backup paths outside the routes folder.
+    static func pathSafe(serial: String?) -> String {
+        let kept = String((serial ?? "").unicodeScalars.filter {
+            $0.isASCII && (CharacterSet.alphanumerics.contains($0) || $0 == "-" || $0 == "_")
+        }.map(Character.init).prefix(64))
+        return kept.isEmpty ? "watch" : kept
     }
 
     private static func availableURL(in dir: URL, name: String, taken: Set<String>) -> URL {

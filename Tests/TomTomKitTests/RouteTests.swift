@@ -203,6 +203,14 @@ private func spurRoute(points: Int = 2000) -> Route {
         #expect(sel.duplicates.map(\.lastPathComponent) == ["Loop.gpx"])
     }
 
+    @Test func makesSerialsSafeForPaths() {
+        #expect(RouteSync.pathSafe(serial: "HR4207I00509") == "HR4207I00509")
+        #expect(RouteSync.pathSafe(serial: "../../etc/x") == "etcx")
+        #expect(RouteSync.pathSafe(serial: "/") == "watch")
+        #expect(RouteSync.pathSafe(serial: nil) == "watch")
+        #expect(RouteSync.pathSafe(serial: String(repeating: "A", count: 200)).count == 64)
+    }
+
     @Test func plansKeepWriteAndDelete() throws {
         let root = try folder()
         defer { try? FileManager.default.removeItem(at: root) }
