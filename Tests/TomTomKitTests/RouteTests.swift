@@ -230,10 +230,13 @@ private func spurRoute(points: Int = 2000) -> Route {
 
     @Test func makesSerialsSafeForPaths() {
         #expect(RouteSync.pathSafe(serial: "HR4207I00509") == "HR4207I00509")
-        #expect(RouteSync.pathSafe(serial: "../../etc/x") == "etcx")
-        #expect(RouteSync.pathSafe(serial: "/") == "watch")
-        #expect(RouteSync.pathSafe(serial: nil) == "watch")
-        #expect(RouteSync.pathSafe(serial: String(repeating: "A", count: 200)).count == 64)
+        let evil = RouteSync.pathSafe(serial: "../../etc/x")!
+        #expect(evil.hasPrefix("etcx-") && evil.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" })
+        // Serials that clean up to the same text stay distinct.
+        #expect(RouteSync.pathSafe(serial: "AB/1") != RouteSync.pathSafe(serial: "AB:1"))
+        #expect(RouteSync.pathSafe(serial: "/")!.hasPrefix("x-"))
+        #expect(RouteSync.pathSafe(serial: nil) == nil && RouteSync.pathSafe(serial: "") == nil)
+        #expect(RouteSync.pathSafe(serial: String(repeating: "A", count: 200))!.count <= 64 + 9)
     }
 
     @Test func plansKeepWriteAndDelete() throws {
