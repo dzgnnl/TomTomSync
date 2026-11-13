@@ -126,6 +126,7 @@ struct MenuView: View {
             header
             if let p = model.progress { ProgressView(value: p) }
             if showLog { logView }
+            if let u = model.update { updateBanner(u) }
             Divider()
             activityList
             if let r = model.routes { routesLine(r) }
@@ -174,6 +175,18 @@ struct MenuView: View {
         }
         .buttonStyle(.plain)
         .help((r.onWatch + (r.skipped.isEmpty ? [] : ["", "Didn't fit:"] + r.skipped)).joined(separator: "\n"))
+    }
+
+    private func updateBanner(_ u: UpdateCheck.Release) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "arrow.down.circle").foregroundStyle(Color.accentColor)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Version \(u.version) is available").font(.callout)
+                Text("Update with: brew upgrade tomtomsync").font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+            }
+            Spacer()
+            Link("What's new", destination: u.url).font(.caption)
+        }
     }
 
     private var statusColor: Color {
@@ -288,7 +301,9 @@ struct SettingsView: View {
                 Toggle("Update GPS QuickFix", isOn: $model.quickFix)
                 Toggle("Set watch time zone to this Mac's", isOn: $model.timeSync)
                 Toggle("Launch at login", isOn: Binding(get: { model.launchAtLogin }, set: { model.launchAtLogin = $0 }))
+                Toggle("Check for updates", isOn: $model.checkForUpdates)
                 LabeledContent("Export folder", value: Exporter.defaultRoot.path)
+                if let v = AppModel.version { LabeledContent("Version", value: v) }
             }
             Section("Routes") {
                 Toggle("Sync routes to the watch", isOn: $model.routeSettings.enabled)
