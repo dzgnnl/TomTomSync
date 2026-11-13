@@ -248,7 +248,7 @@ public struct ExportedActivity: Identifiable, Sendable {
     public var isTrivial: Bool {
         // Indoor activities have no distance; outdoors, a few metres is a false start.
         let indoor: Set<TTSport> = [.gym, .freestyle, .indoorCycling, .swimming]
-        return timerTime < 60 || (distance < 10 && !(sport.map(indoor.contains) ?? true))
+        return timerTime < 60 || (distance < 10 && !(sport.map(indoor.contains) ?? false))
     }
 }
 
