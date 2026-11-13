@@ -25,7 +25,7 @@ Requires macOS 14 or newer.
 3. Open **TomTomSync** from Applications. A 🏃 icon appears in the menu bar.
 4. Plug in the watch. If macOS asks to allow the accessory, click **Allow**.
 
-**Update:** `brew upgrade`, then start TomTomSync again.
+**Update:** TomTomSync tells you when a new version is available. Run `brew upgrade`, then start TomTomSync again.
 **Start at login:** 🏃 → **Settings…** → **Launch at login**.
 
 ## Use

@@ -22,6 +22,7 @@ final class AppModel {
     var stravaMessage: String?
     /// Routes result of the last sync with a watch that supports them.
     var routes: RouteSync.Summary?
+    var update: UpdateCheck.Release?
 
     // Settings
     var autoSync: Bool { didSet { save("autoSync", autoSync) } }
@@ -30,6 +31,9 @@ final class AppModel {
     var timeSync: Bool { didSet { save("timeSync", timeSync) } }
     var stravaAutoUpload: Bool { didSet { save("stravaAutoUpload", stravaAutoUpload) } }
     var routeSettings = RouteSettings.load() { didSet { routeSettings.save() } }
+    var checkForUpdates: Bool {
+        didSet { save("checkForUpdates", checkForUpdates); if checkForUpdates { startUpdateChecks() } else { stopUpdateChecks() } }
+    }
     var launchAtLogin: Bool {
         get { SMAppService.mainApp.status == .enabled }
         set {
@@ -40,17 +44,19 @@ final class AppModel {
 
     @ObservationIgnored private var monitor: WatchMonitor?
     @ObservationIgnored private var pendingSync: Task<Void, Never>?
+    @ObservationIgnored private var updateTask: Task<Void, Never>?
 
     init() {
         let d = UserDefaults.standard
         Self.migrateDefaults(into: d)
         d.register(defaults: ["autoSync": true, "deleteAfterExport": true, "quickFix": true,
-                              "timeSync": true, "stravaAutoUpload": true])
+                              "timeSync": true, "stravaAutoUpload": true, "checkForUpdates": true])
         autoSync = d.bool(forKey: "autoSync")
         deleteAfterExport = d.bool(forKey: "deleteAfterExport")
         quickFix = d.bool(forKey: "quickFix")
         timeSync = d.bool(forKey: "timeSync")
         stravaAutoUpload = d.bool(forKey: "stravaAutoUpload")
+        checkForUpdates = d.bool(forKey: "checkForUpdates")
         lastSync = d.object(forKey: "lastSync") as? Date
         reloadActivities()
         if Bundle.main.bundleIdentifier != nil {
@@ -59,6 +65,7 @@ final class AppModel {
         monitor = WatchMonitor { [weak self] connected in
             Task { @MainActor in self?.watchChanged(connected) }
         }
+        if checkForUpdates { startUpdateChecks() }
     }
 
     /// Up to v0.1.0 the bundle ID was nl.takobruinsma.TomTomSync; carry its
@@ -185,6 +192,40 @@ final class AppModel {
             stravaMessage = nil
         } catch {
             stravaMessage = "\(error)"
+        }
+    }
+
+    // MARK: Updates
+
+    /// The running version, e.g. "0.1.0"; nil when not run from an app bundle.
+    static var version: String? { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String }
+
+    /// Checks shortly after launch and then once a day. Notifies once per new version.
+    private func startUpdateChecks() {
+        guard updateTask == nil, Self.version != nil else { return }
+        updateTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(30))
+            while !Task.isCancelled {
+                await self?.checkUpdate()
+                try? await Task.sleep(for: .seconds(24 * 3600))
+            }
+        }
+    }
+
+    private func stopUpdateChecks() {
+        updateTask?.cancel(); updateTask = nil
+        update = nil
+    }
+
+    private func checkUpdate() async {
+        guard let current = Self.version, let latest = try? await UpdateCheck.latest() else { return }
+        guard UpdateCheck.isNewer(latest.version, than: current) else { update = nil; return }
+        update = latest
+        let d = UserDefaults.standard
+        if d.string(forKey: "notifiedVersion") != latest.version {
+            d.set(latest.version, forKey: "notifiedVersion")
+            notify(title: "TomTomSync \(latest.version) is available",
+                   body: "Update with: brew upgrade tomtomsync")
         }
     }
 
