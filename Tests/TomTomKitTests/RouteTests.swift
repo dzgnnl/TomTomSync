@@ -152,6 +152,19 @@ private func spurRoute(points: Int = 2000) -> Route {
         #expect(abs(s.maximumDeviation - 20) < 0.5)
     }
 
+    @Test func handlesRoutesAcrossThe180Meridian() {
+        // A straight line east across 180°, with one 100 m bump north in the middle.
+        let seg = (0..<1000).map { i -> Route.Point in
+            let lon = 179.95 + Double(i) * 0.0001
+            return pt(-17 + (i == 500 ? 0.0009 : 0), lon > 180 ? lon - 360 : lon)
+        }
+        let s = Route(name: "Fiji", segments: [seg]).simplified(maximumPoints: 3)
+        #expect(s.route.segments[0].contains(seg[500]))
+        // The points beside the bump are ~100 m off the start–bump–end line;
+        // without unwrapping, the wrap point would be thousands of km "off".
+        #expect(s.maximumDeviation > 90 && s.maximumDeviation < 110)
+    }
+
     @Test func handlesLongRunsOfIdenticalPointsQuickly() {
         // 200,000 identical points between a start and an end: quadratic
         // splitting would take minutes.

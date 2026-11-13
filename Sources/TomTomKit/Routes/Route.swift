@@ -181,8 +181,12 @@ extension Route {
         let all = segments.flatMap { $0 }
         let lat0 = all.map(\.latitude).reduce(0, +) / Double(all.count) * Double.pi / 180
         let mPerDeg = 6_371_000.0 * Double.pi / 180
+        // Longitudes relative to the first point, wrapped to ±180°, so a route
+        // crossing the 180° meridian stays continuous (179.99° and −179.99°
+        // are a few km apart, not 40,000).
+        let lon0 = all[0].longitude
         func xy(_ p: Point) -> SIMD2<Double> {
-            SIMD2(p.longitude * mPerDeg * cos(lat0), p.latitude * mPerDeg)
+            SIMD2(remainder(p.longitude - lon0, 360) * mPerDeg * cos(lat0), p.latitude * mPerDeg)
         }
 
         // (segment, index, importance)
