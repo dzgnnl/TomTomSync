@@ -35,6 +35,18 @@ Requires macOS 14 or newer.
 - Files are saved in `~/TomTom/fit` (`.fit`) and `~/TomTom/ttbin` (the watch's original files).
 - **Settings…** turns each step on or off. All are on by default.
 
+## Routes
+
+Runner 3, Spark 3 and Adventurer can show a route during a run, cycle or other GPS activity.
+On the watch, open the activity's **Settings → Trails**.
+
+- Put GPX files in `~/TomTom/routes` (🏃 → **Settings…** → **Open Routes Folder**).
+  On every sync the watch gets the same routes as the folder, up to 15.
+- With Strava connected, your starred Strava routes are added too: runs by default.
+  Walks and rides can be turned on in **Settings… → Routes**.
+- The first sync saves any routes already on the watch to the folder, so nothing is lost.
+- Long routes are simplified to the watch's 500 points; corners stay where they are.
+
 ## Connect Strava
 
 Strava requires every user to create their own free API application:

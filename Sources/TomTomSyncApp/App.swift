@@ -128,6 +128,7 @@ struct MenuView: View {
             if showLog { logView }
             Divider()
             activityList
+            if let r = model.routes { routesLine(r) }
             Divider()
             footer
         }
@@ -159,6 +160,20 @@ struct MenuView: View {
         .contentShape(Rectangle())
         .onTapGesture { showLog.toggle() }
         .help("Click to show the sync log")
+    }
+
+    private func routesLine(_ r: RouteSync.Summary) -> some View {
+        Button { model.openRoutesFolder() } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "point.topleft.down.to.point.bottomright.curvepath").foregroundStyle(.secondary)
+                Text("Routes: \(r.onWatch.count) on the watch" + (r.skipped.isEmpty ? "" : " · \(r.skipped.count) didn't fit"))
+                    .font(.caption)
+                Spacer()
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help((r.onWatch + (r.skipped.isEmpty ? [] : ["", "Didn't fit:"] + r.skipped)).joined(separator: "\n"))
     }
 
     private var statusColor: Color {
@@ -275,6 +290,26 @@ struct SettingsView: View {
                 Toggle("Launch at login", isOn: Binding(get: { model.launchAtLogin }, set: { model.launchAtLogin = $0 }))
                 LabeledContent("Export folder", value: Exporter.defaultRoot.path)
             }
+            Section("Routes") {
+                Toggle("Sync routes to the watch", isOn: $model.routeSettings.enabled)
+                Text("GPX files in ~/TomTom/routes go to the watch, up to 15, under Settings → Trails of a GPS activity. Needs a Runner 3, Spark 3 or Adventurer.")
+                    .font(.caption).foregroundStyle(.secondary)
+                if let c = model.strava, c.isLoggedIn {
+                    LabeledContent("Starred Strava routes") {
+                        VStack(alignment: .leading) {
+                            kindToggle("Runs and trail runs", .run)
+                            kindToggle("Walks and hikes", .walk)
+                            kindToggle("Rides", .ride)
+                        }
+                    }
+                    .disabled(!model.routeSettings.enabled)
+                    if !c.canReadPrivateRoutes {
+                        Text("Private Strava routes are skipped. To include them, disconnect Strava below and connect again.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Button("Open Routes Folder") { model.openRoutesFolder() }
+            }
             Section("Strava") {
                 if let c = model.strava, c.isLoggedIn {
                     LabeledContent("Connected as", value: c.athlete ?? "athlete")
@@ -302,5 +337,13 @@ struct SettingsView: View {
             clientID = model.strava?.clientID ?? ""
             clientSecret = model.strava?.clientSecret ?? ""
         }
+    }
+
+    private func kindToggle(_ title: String, _ kind: StravaRoute.Kind) -> some View {
+        Toggle(title, isOn: Binding(
+            get: { model.routeSettings.stravaKinds.contains(kind) },
+            set: { on in
+                if on { model.routeSettings.stravaKinds.insert(kind) } else { model.routeSettings.stravaKinds.remove(kind) }
+            }))
     }
 }

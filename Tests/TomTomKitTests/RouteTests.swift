@@ -193,6 +193,16 @@ private func spurRoute(points: Int = 2000) -> Route {
         #expect(sel.failed.map(\.0.lastPathComponent) == ["broken.gpx"])
     }
 
+    @Test func skipsDuplicatesKeepingTheOwnCopy() throws {
+        let root = try folder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try add(root, "Loop", age: 100)
+        try add(root, "Loop", strava: true, age: 0)
+        let sel = RouteSync.select(root: root)
+        #expect(sel.chosen.count == 1 && sel.chosen[0].fromStrava == false)
+        #expect(sel.duplicates.map(\.lastPathComponent) == ["Loop.gpx"])
+    }
+
     @Test func plansKeepWriteAndDelete() throws {
         let root = try folder()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -212,5 +222,111 @@ private func spurRoute(points: Int = 2000) -> Route {
             }
         }
         #expect(steps == ["keep 0 A", "write 1 B", "delete 2 Gone", "delete 3 ?"])
+    }
+}
+
+// MARK: - Strava routes
+
+/// Serves canned Strava responses: the route list and each route's GPX.
+final class FakeStrava: URLProtocol, @unchecked Sendable {
+    nonisolated(unsafe) static var routesJSON = "[]"
+    nonisolated(unsafe) static var gpxRequests: [String] = []
+
+    override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "www.strava.com" }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func stopLoading() {}
+    override func startLoading() {
+        let path = request.url!.path
+        var body = Data(), status = 200
+        if path.hasSuffix("/routes") {
+            body = Data(Self.routesJSON.utf8)
+        } else if path.hasSuffix("/export_gpx") {
+            let id = path.split(separator: "/").dropLast().last.map(String.init) ?? ""
+            Self.gpxRequests.append(id)
+            body = GPX.write(Route(name: "Route \(id)", segments: [[pt(52, 4.9), pt(52.01, 4.91)]]))
+        } else { status = 404 }
+        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!,
+                            cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: body)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+}
+
+private func route(_ id: String, _ name: String, type: Int, starred: Bool = true, created: String, updated: String? = nil) -> String {
+    #"{"id": \#(id), "id_str": "\#(id)", "name": "\#(name)", "type": \#(type), "starred": \#(starred), "private": false, "created_at": "\#(created)", "updated_at": "\#(updated ?? created)"}"#
+}
+
+@Suite(.serialized) struct StravaRouteTests {
+    @Test func decodesRouteList() throws {
+        let json = "[" + [route("3344556677889900112", "Run", type: 2, created: "2024-01-02T10:00:00Z"),
+                          route("2", "Hike", type: 4, starred: false, created: "2024-01-03T10:00:00.123Z"),
+                          route("3", "Gravel", type: 6, created: "bad date")].joined(separator: ",") + "]"
+        let r = try StravaRoute.decodeList(Data(json.utf8))
+        #expect(r.map(\.id) == ["3344556677889900112", "2", "3"])
+        #expect(r.map(\.kind) == [.run, .walk, .ride])
+        #expect(r[0].starred && !r[1].starred)
+        #expect(r[1].createdAt.timeIntervalSince1970 > 1_704_000_000)
+        #expect(r[2].createdAt == .distantPast)
+    }
+
+    @Test func picksStarredRoutesOfChosenKindsNewestFirst() throws {
+        let json = "[" + (0..<20).map { route("\($0 + 1)", "Run \($0)", type: $0 % 2 == 0 ? 2 : 5,
+                                              created: String(format: "2024-01-%02dT10:00:00Z", $0 + 1)) }.joined(separator: ",")
+            + "," + route("99", "Ride", type: 1, created: "2025-01-01T00:00:00Z")
+            + "," + route("98", "Unstarred", type: 2, starred: false, created: "2025-01-01T00:00:00Z") + "]"
+        let all = try StravaRoute.decodeList(Data(json.utf8))
+        let w = StravaRouteSync.wanted(all, kinds: [.run])
+        #expect(w.count == 15)
+        #expect(w.first?.name == "Run 19")
+        #expect(!w.contains { $0.name == "Ride" || $0.name == "Unstarred" })
+        #expect(StravaRouteSync.wanted(all, kinds: []).isEmpty)
+    }
+
+    @Test func downloadsUpdatesAndRemovesRoutes() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("strava-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [FakeStrava.self]
+        var creds = StravaCredentials(clientID: "1", clientSecret: "s")
+        creds.accessToken = "t"; creds.refreshToken = "r"; creds.expiresAt = Date().addingTimeInterval(3600); creds.athleteID = 7
+        let client = StravaClient(credentials: creds, session: URLSession(configuration: config))
+        let dir = RouteSync.stravaFolder(root: root)
+        func files() throws -> [String] { try FileManager.default.contentsOfDirectory(atPath: dir.path).filter { $0.hasSuffix(".gpx") }.sorted() }
+        // A file the user put there themselves is never touched.
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try GPX.write(Route(name: "Mine", segments: [[pt(1, 1)]])).write(to: dir.appendingPathComponent("Mine.gpx"))
+
+        FakeStrava.routesJSON = "[" + route("1", "Amstel/loop", type: 2, created: "2024-01-01T10:00:00Z") + ","
+            + route("2", "Ride", type: 1, created: "2024-01-02T10:00:00Z") + "]"
+        FakeStrava.gpxRequests = []
+        var s = try await StravaRouteSync.sync(client: client, kinds: [.run], root: root, log: SyncLog { _ in })
+        #expect(s.downloaded == ["Amstel/loop"])
+        #expect(try files() == ["Amstel-loop.gpx", "Mine.gpx"])
+        let created = try dir.appendingPathComponent("Amstel-loop.gpx").resourceValues(forKeys: [.creationDateKey]).creationDate
+        #expect(created == ISO8601DateFormatter().date(from: "2024-01-01T10:00:00Z"))
+
+        // Unchanged: no download.
+        s = try await StravaRouteSync.sync(client: client, kinds: [.run], root: root, log: SyncLog { _ in })
+        #expect(s.unchanged == 1 && FakeStrava.gpxRequests == ["1"])
+
+        // Updated and renamed on Strava: downloaded again under the new name.
+        FakeStrava.routesJSON = "[" + route("1", "Amstel", type: 2, created: "2024-01-01T10:00:00Z", updated: "2024-02-01T10:00:00Z") + "]"
+        s = try await StravaRouteSync.sync(client: client, kinds: [.run], root: root, log: SyncLog { _ in })
+        #expect(s.downloaded == ["Amstel"] && FakeStrava.gpxRequests == ["1", "1"])
+        #expect(try files() == ["Amstel.gpx", "Mine.gpx"])
+
+        // No kinds chosen: removed, without asking Strava for anything.
+        FakeStrava.routesJSON = "not json"
+        s = try await StravaRouteSync.sync(client: client, kinds: [], root: root, log: SyncLog { _ in })
+        #expect(s.removed == ["Amstel.gpx"])
+        #expect(try files() == ["Mine.gpx"])
+    }
+
+    @Test func storesSettings() throws {
+        let d = try #require(UserDefaults(suiteName: "TomTomSyncTests-\(UUID().uuidString)"))
+        #expect(RouteSettings.load(d).enabled && RouteSettings.load(d).stravaKinds == [.run])
+        RouteSettings(enabled: false, stravaKinds: [.walk, .ride]).save(d)
+        let s = RouteSettings.load(d)
+        #expect(!s.enabled && s.stravaKinds == [.walk, .ride])
     }
 }

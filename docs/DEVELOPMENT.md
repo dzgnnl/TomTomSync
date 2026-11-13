@@ -26,7 +26,8 @@ the Command Line Tools. `--zip` creates `build/TomTomSync-<version>.zip`.
 | `ttsync sync [--delete]` | All of the above, then Strava upload |
 | `ttsync strava login\|status\|upload\|logout` | Strava connection and backlog uploads |
 | `ttsync routes [list]` | Routes on the watch and in `~/TomTom/routes` |
-| `ttsync routes sync [--dry-run]` | Make the watch's routes match `~/TomTom/routes` (see [Routes](#routes)) |
+| `ttsync routes sync [--dry-run] [--no-strava]` | Download starred Strava routes, then make the watch's routes match `~/TomTom/routes` (see [Routes](#routes)) |
+| `ttsync routes strava` | Your Strava routes and which ones would be synced |
 | `ttsync routes check FILE.gpx…` | Offline: name, length and simplification of GPX files |
 | `ttsync convert FILE.ttbin…` | Offline ttbin → FIT |
 | `ttsync files`, `ttsync dump ID OUT` | Debugging: list and save raw watch files |
@@ -152,10 +153,11 @@ first-generation watches have no Trails menu.
 ### Sync
 
 `~/TomTom/routes/*.gpx` (own files) and `~/TomTom/routes/Strava/*.gpx` are mirrored
-to the watch:
+to the watch as part of every sync (Settings → Routes, or `ttsync routes sync`):
 
 1. **Selection:** at most 15 routes. Own files go first, then Strava, each newest
-   first (file creation date). Routes that don't fit are reported.
+   first (file creation date). An exact duplicate (same name and points) takes one
+   slot, and the own copy wins. Routes that don't fit are reported.
 2. **Order:** on the watch, the routes are sorted by name, in slots `0x00B80000` upward.
    A slot that already holds the same route is left alone. Other slots are deleted
    and rewritten, and route files beyond the last slot are deleted.
@@ -163,6 +165,21 @@ to the watch:
    GPX first, so nothing is lost. The raw route files are also copied to
    `routes/.watch-backup-<serial>/`. If any route file can't be read, the sync stops
    instead of deleting it. A marker file `routes/.imported-<serial>` records that this has been done.
+
+**Strava** (`Routes/StravaRoutes.swift`), before connecting to the watch:
+- `GET /athletes/{id}/routes` lists the athlete's own routes. Saving someone else's
+  route on Strava makes a copy, so it shows up here too. Starred routes of the
+  chosen kinds are kept, newest first, 15 at most.
+- Kinds map Strava route types as follows: run = 2 Run, 5 Trail Run; walk = 3 Walk, 4 Hike;
+  ride = 1 Ride, 6 Gravel, 7 MTB. Default: run.
+- Changed routes are downloaded with `GET /routes/{id}/export_gpx`, using
+  `updated_at`. The file's creation date is set to the route's `created_at`.
+- `routes/Strava/.index.json` maps route IDs to files. Only those files are ever
+  replaced or removed, e.g. when a route is unstarred.
+- Private routes need the `read_all` scope, requested since this version. Older logins
+  have to reconnect.
+- The settings (`routeSync`, `stravaRouteKinds`) live in the app's preferences
+  domain `nl.dzgn.TomTomSync`, so `ttsync` uses the same ones.
 
 **GPX:** tracks (`trkseg` → segment) and routes (`rte` → segment) are read.
 Waypoints, elevation and times are ignored. The name comes from the first `trk` or
