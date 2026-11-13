@@ -164,7 +164,9 @@ to the watch as part of every sync (Settings → Routes, or `ttsync routes sync`
 3. **First sync of a watch:** its routes that aren't in the folder are saved there as
    GPX first, so nothing is lost. The raw route files are also copied to
    `routes/.watch-backup-<serial>/`. A marker file `routes/.imported-<serial>`
-   records that this has been done.
+   records that this has been done. The serial is reduced to letters, digits, `-`
+   and `_`, plus a short hash if that changed it. A watch that reports no serial
+   never gets a marker, so its unknown routes are saved on every sync.
 4. **Unreadable route files:** on any sync, if a route file on the watch can't be decoded,
    it is copied to the backup folder and the route sync stops, so it is never
    overwritten or deleted.

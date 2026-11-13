@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// Mirrors the routes folder to the watch.
@@ -157,11 +158,13 @@ public enum RouteSync {
 
         let files = try readWatchRoutes(watch)
         let onWatch = files.mapValues(\.route)
+        // Without a serial the watch can't be told apart from others, so it is
+        // never marked as imported: its unknown routes are saved on every sync.
         let serial = pathSafe(serial: watch.transport.serialNumber)
-        let marker = dir.appendingPathComponent(".imported-\(serial)")
+        let marker = serial.map { dir.appendingPathComponent(".imported-\($0)") }
         var pending: [(URL, Route)] = []   // dry run: imports that would be saved
-        let firstSync = !fm.fileExists(atPath: marker.path)
-        let backup = dir.appendingPathComponent(".watch-backup-\(serial)")
+        let firstSync = marker.map { !fm.fileExists(atPath: $0.path) } ?? true
+        let backup = dir.appendingPathComponent(".watch-backup-\(serial ?? "unknown")")
         func saveBackup(_ ids: some Sequence<UInt32>, suffix: String = "") throws {
             try fm.createDirectory(at: backup, withIntermediateDirectories: true)
             for id in ids { try Data(files[id]!.bytes).write(to: backup.appendingPathComponent("\(id.hex)\(suffix).bin")) }
@@ -195,7 +198,7 @@ public enum RouteSync {
                 }
                 summary.imported.append(url)
             }
-            if !dryRun { try Data().write(to: marker) }
+            if !dryRun, let marker { try Data().write(to: marker) }
         }
 
         let selection = select(root: root, extra: pending)
@@ -234,11 +237,16 @@ public enum RouteSync {
 
     /// The serial as a file name part: letters, digits, "-" and "_" only, so a
     /// device can't steer the marker or backup paths outside the routes folder.
-    static func pathSafe(serial: String?) -> String {
-        let kept = String((serial ?? "").unicodeScalars.filter {
+    /// If that changed the serial, a hash of the original keeps different
+    /// serials apart. nil when the watch reports no serial.
+    static func pathSafe(serial: String?) -> String? {
+        guard let serial, !serial.isEmpty else { return nil }
+        let kept = String(serial.unicodeScalars.filter {
             $0.isASCII && (CharacterSet.alphanumerics.contains($0) || $0 == "-" || $0 == "_")
         }.map(Character.init).prefix(64))
-        return kept.isEmpty ? "watch" : kept
+        guard kept != serial else { return kept }
+        let hash = SHA256.hash(data: Data(serial.utf8)).prefix(4).map { String(format: "%02x", $0) }.joined()
+        return (kept.isEmpty ? "x" : kept) + "-" + hash
     }
 
     private static func availableURL(in dir: URL, name: String, taken: Set<String>) -> URL {
