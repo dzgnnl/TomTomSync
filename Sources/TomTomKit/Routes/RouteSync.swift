@@ -55,8 +55,16 @@ public enum RouteSync {
                       simplified: route.simplified(maximumPoints: RouteFile.maximumPoints))
         }
         for (dir, fromStrava) in [(folder(root: root), false), (stravaFolder(root: root), true)] {
-            let urls = (try? FileManager.default.contentsOfDirectory(
-                at: dir, includingPropertiesForKeys: [.creationDateKey], options: .skipsHiddenFiles)) ?? []
+            // A missing folder is empty; one that exists but can't be read is a failure.
+            guard FileManager.default.fileExists(atPath: dir.path) else { continue }
+            let urls: [URL]
+            do {
+                urls = try FileManager.default.contentsOfDirectory(
+                    at: dir, includingPropertiesForKeys: [.creationDateKey], options: .skipsHiddenFiles)
+            } catch {
+                sel.failed.append((dir, "can't read the folder: \(error.localizedDescription)"))
+                continue
+            }
             for url in urls where url.pathExtension.lowercased() == "gpx" {
                 do {
                     let route = try GPX.read(url)
@@ -120,12 +128,16 @@ public enum RouteSync {
 
     public enum SyncError: Error, CustomStringConvertible {
         case unreadableRoutes([UInt32], backup: URL?)
+        case unreadableSources([(URL, String)])
         public var description: String {
             switch self {
             case .unreadableRoutes(let ids, let backup):
                 return "Couldn't read route file(s) \(ids.map(\.hex).joined(separator: ", ")) on the watch. "
                     + "Not syncing routes, so they aren't deleted."
                     + (backup.map { " Raw copies are in \($0.path)." } ?? "")
+            case .unreadableSources(let failed):
+                return "Can't read " + failed.map { "\($0.0.lastPathComponent) (\($0.1))" }.joined(separator: ", ")
+                    + ". Routes on the watch are left unchanged until it is fixed or removed."
             }
         }
     }
@@ -202,7 +214,9 @@ public enum RouteSync {
         }
 
         let selection = select(root: root, extra: pending)
-        for (url, error) in selection.failed { log("⚠︎ Skipping \(url.lastPathComponent): \(error)") }
+        // A route we can't read might be one that is on the watch now: stop
+        // rather than overwrite or delete it.
+        if !selection.failed.isEmpty { throw SyncError.unreadableSources(selection.failed) }
         for c in selection.skipped { log("Doesn't fit on the watch (15 routes max): \(c.url.lastPathComponent)") }
         summary.skipped = selection.skipped.map(\.watchName)
 

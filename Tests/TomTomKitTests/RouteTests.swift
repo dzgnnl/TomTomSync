@@ -218,6 +218,20 @@ private func spurRoute(points: Int = 2000) -> Route {
         #expect(sel.failed.map(\.0.lastPathComponent) == ["broken.gpx"])
     }
 
+    @Test func treatsAnUnreadableFolderAsAFailureNotAsEmpty() throws {
+        let root = try folder()
+        let dir = RouteSync.folder(root: root)
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: dir.path)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dir.path)
+            try? FileManager.default.removeItem(at: root)
+        }
+        let sel = RouteSync.select(root: root)
+        #expect(sel.failed.map(\.0) == [dir])
+        // A folder that doesn't exist at all is simply empty.
+        #expect(RouteSync.select(root: root.appendingPathComponent("missing")).failed.isEmpty)
+    }
+
     @Test func skipsDuplicatesKeepingTheOwnCopy() throws {
         let root = try folder()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -268,6 +282,7 @@ final class FakeStrava: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var routesJSON = "[]"
     nonisolated(unsafe) static var gpxRequests: [String] = []
     nonisolated(unsafe) static var failingIDs: Set<String> = []
+    nonisolated(unsafe) static var listRequests = 0
 
     override class func canInit(with request: URLRequest) -> Bool { request.url?.host == "www.strava.com" }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -276,7 +291,11 @@ final class FakeStrava: URLProtocol, @unchecked Sendable {
         let path = request.url!.path
         var body = Data(), status = 200
         if path.hasSuffix("/routes") {
-            body = Data(Self.routesJSON.utf8)
+            // One page of everything, then an empty page (the end).
+            let page = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
+                .queryItems?.first { $0.name == "page" }?.value
+            Self.listRequests += 1
+            body = Data((page == "1" ? Self.routesJSON : "[]").utf8)
         } else if path.hasSuffix("/export_gpx") {
             let id = path.split(separator: "/").dropLast().last.map(String.init) ?? ""
             Self.gpxRequests.append(id)
@@ -338,8 +357,10 @@ private func route(_ id: String, _ name: String, type: Int, starred: Bool = true
             + route("2", "Ride", type: 1, created: "2024-01-02T10:00:00Z") + "]"
         FakeStrava.gpxRequests = []
         FakeStrava.failingIDs = []
+        FakeStrava.listRequests = 0
         var s = try await StravaRouteSync.sync(client: client, kinds: [.run], root: root, log: SyncLog { _ in })
         #expect(s.downloaded == ["Amstel/loop"])
+        #expect(FakeStrava.listRequests == 2)   // read on until an empty page
         #expect(try files() == ["Amstel-loop.gpx", "Mine.gpx"])
         let created = try dir.appendingPathComponent("Amstel-loop.gpx").resourceValues(forKeys: [.creationDateKey]).creationDate
         #expect(created == ISO8601DateFormatter().date(from: "2024-01-01T10:00:00Z"))
