@@ -31,6 +31,7 @@ final class AppModel {
     var timeSync: Bool { didSet { save("timeSync", timeSync) } }
     var stravaAutoUpload: Bool { didSet { save("stravaAutoUpload", stravaAutoUpload) } }
     var routeSettings = RouteSettings.load() { didSet { routeSettings.save() } }
+    var shareUsage: Bool { didSet { save("shareUsage", shareUsage) } }
     var checkForUpdates: Bool {
         didSet { save("checkForUpdates", checkForUpdates); if checkForUpdates { startUpdateChecks() } else { stopUpdateChecks() } }
     }
@@ -45,18 +46,21 @@ final class AppModel {
     @ObservationIgnored private var monitor: WatchMonitor?
     @ObservationIgnored private var pendingSync: Task<Void, Never>?
     @ObservationIgnored private var updateTask: Task<Void, Never>?
+    @ObservationIgnored private var telemetryTask: Task<Void, Never>?
 
     init() {
         let d = UserDefaults.standard
         Self.migrateDefaults(into: d)
         d.register(defaults: ["autoSync": true, "deleteAfterExport": true, "quickFix": true,
-                              "timeSync": true, "stravaAutoUpload": true, "checkForUpdates": true])
+                              "timeSync": true, "stravaAutoUpload": true, "checkForUpdates": true,
+                              "shareUsage": true])
         autoSync = d.bool(forKey: "autoSync")
         deleteAfterExport = d.bool(forKey: "deleteAfterExport")
         quickFix = d.bool(forKey: "quickFix")
         timeSync = d.bool(forKey: "timeSync")
         stravaAutoUpload = d.bool(forKey: "stravaAutoUpload")
         checkForUpdates = d.bool(forKey: "checkForUpdates")
+        shareUsage = d.bool(forKey: "shareUsage")
         lastSync = d.object(forKey: "lastSync") as? Date
         reloadActivities()
         if Bundle.main.bundleIdentifier != nil {
@@ -66,6 +70,7 @@ final class AppModel {
             Task { @MainActor in self?.watchChanged(connected) }
         }
         if checkForUpdates { startUpdateChecks() }
+        startTelemetry()
     }
 
     /// Up to v0.1.0 the bundle ID was nl.takobruinsma.TomTomSync; carry its
@@ -131,6 +136,9 @@ final class AppModel {
         do {
             let s = try await Task.detached { try await SyncRunner.run(o, log: logger, progress: onProgress) }.value
             lastSync = Date()
+            if let id = s.watchProductID {
+                UserDefaults.standard.set(String(format: "0x%04X", id), forKey: "lastWatchProductID")
+            }
             phase = .idle
             progress = nil
             reloadActivities()
@@ -226,6 +234,78 @@ final class AppModel {
             d.set(latest.version, forKey: "notifiedVersion")
             notify(title: "TomTomSync \(latest.version) is available",
                    body: "Update with: brew upgrade tomtomsync")
+        }
+    }
+
+    /// A new GitHub issue with the feedback form, prefilled with version, macOS and watch.
+    func openFeedback() {
+        let os = ProcessInfo.processInfo.operatingSystemVersion
+        var c = URLComponents(string: "https://github.com/dzgnnl/TomTomSync/issues/new")!
+        c.queryItems = [
+            .init(name: "template", value: "feedback.yml"),
+            .init(name: "version", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""),
+            .init(name: "macos", value: "\(os.majorVersion).\(os.minorVersion).\(os.patchVersion)"),
+            .init(name: "watch", value: UserDefaults.standard.string(forKey: "lastWatchProductID") ?? ""),
+        ]
+        if let url = c.url { NSWorkspace.shared.open(url) }
+    }
+
+    // MARK: Usage statistics
+
+    /// Explains the daily signal once, then sends it at most once a day while
+    /// `shareUsage` is on. Nothing is sent before the notice has been shown.
+    private func startTelemetry() {
+        guard Telemetry.isConfigured, Bundle.main.bundleIdentifier != nil else { return }
+        telemetryTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(5))
+            self?.showUsageNoticeOnce()
+            while !Task.isCancelled {
+                await self?.sendUsageIfDue()
+                try? await Task.sleep(for: .seconds(3600))
+            }
+        }
+    }
+
+    private func showUsageNoticeOnce() {
+        let d = UserDefaults.standard
+        guard !d.bool(forKey: "usageNoticeShown") else { return }
+        let alert = NSAlert()
+        alert.messageText = "Help decide TomTomSync's future"
+        alert.informativeText = """
+            Once a day, TomTomSync sends an anonymous signal: the app version, macOS version, \
+            watch model and whether Strava is connected. Nothing about your activities, \
+            locations or accounts.
+
+            It only shows how many people still use the app. You can turn it off any time \
+            in Settings.
+            """
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Turn Off")
+        NSApp.activate()
+        if alert.runModal() == .alertSecondButtonReturn { shareUsage = false }
+        d.set(true, forKey: "usageNoticeShown")
+    }
+
+    private func sendUsageIfDue() async {
+        let d = UserDefaults.standard
+        guard shareUsage, d.bool(forKey: "usageNoticeShown") else { return }
+        let today = Calendar.current.startOfDay(for: Date())
+        if let last = d.object(forKey: "usageSentDay") as? Date, last >= today { return }
+        let installID = d.string(forKey: "installID") ?? {
+            let id = UUID().uuidString; d.set(id, forKey: "installID"); return id
+        }()
+        let os = ProcessInfo.processInfo.operatingSystemVersion
+        let info = Telemetry.Info(
+            appVersion: Self.version ?? "?",
+            macOSVersion: "\(os.majorVersion).\(os.minorVersion)",
+            watchProductID: d.string(forKey: "lastWatchProductID"),
+            stravaConnected: strava?.isLoggedIn ?? false)
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
+        do {
+            try await Telemetry.send(info, installID: installID, testMode: !Telemetry.isRelease(build: build))
+            d.set(today, forKey: "usageSentDay")
+        } catch {
+            // Try again in an hour; never bother the user about it.
         }
     }
 

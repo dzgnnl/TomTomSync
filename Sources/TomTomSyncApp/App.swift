@@ -302,6 +302,11 @@ struct SettingsView: View {
                 Toggle("Set watch time zone to this Mac's", isOn: $model.timeSync)
                 Toggle("Launch at login", isOn: Binding(get: { model.launchAtLogin }, set: { model.launchAtLogin = $0 }))
                 Toggle("Check for updates", isOn: $model.checkForUpdates)
+                if Telemetry.isConfigured {
+                    Toggle("Send anonymous usage statistics", isOn: $model.shareUsage)
+                    Text("Once a day: app version, macOS version, watch model and whether Strava is connected. Nothing about activities, locations or accounts. It shows whether the app is still used.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 LabeledContent("Export folder", value: Exporter.defaultRoot.path)
                 if let v = AppModel.version { LabeledContent("Version", value: v) }
             }
@@ -344,6 +349,11 @@ struct SettingsView: View {
                     .disabled(clientID.isEmpty || clientSecret.isEmpty)
                 }
                 if let m = model.stravaMessage { Text(m).font(.caption).foregroundStyle(.secondary) }
+            }
+            Section("Feedback") {
+                Text("Problems, questions or ideas, or just letting us know it works for you: share them on GitHub. A free account is needed.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Button("Send Feedback…") { model.openFeedback() }
             }
         }
         .formStyle(.grouped)

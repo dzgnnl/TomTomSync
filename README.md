@@ -70,6 +70,24 @@ skipped, and duplicates are detected.
   **System Settings → Privacy & Security → Open Anyway**.
 - **Strava errors:** **Settings… → Disconnect Strava**, then connect again.
 
+## Privacy
+
+Your activities, routes and Strava login stay on your Mac and go only to Strava, if
+you connect it.
+
+To see whether the app is still used, TomTomSync sends one anonymous signal a day to
+[TelemetryDeck](https://telemetrydeck.com) (EU-based, stores no IP addresses). The
+signal contains:
+- the app version and macOS version,
+- the watch model (a product code such as `0x07DE`),
+- whether Strava is connected,
+- a random installation ID, hashed, so installations can be counted but not identified.
+
+It contains nothing about your activities, locations, name, accounts or watch serial
+number. A notice on first launch explains this. Turn it off in **Settings… → Send
+anonymous usage statistics**. The code is in
+[`Telemetry.swift`](Sources/TomTomKit/Sync/Telemetry.swift).
+
 ## Uninstall
 
 `brew uninstall --cask --zap tomtomsync` removes the app, settings and Strava login.
@@ -77,6 +95,7 @@ Your activities in `~/TomTom` are kept.
 
 ## More
 
+- **Feedback:** 🏃 → **Settings… → Send Feedback…**, or [open an issue](https://github.com/dzgnnl/TomTomSync/issues/new?template=feedback.yml).
 - [Technical documentation](docs/DEVELOPMENT.md): building from source, command line, releases, protocol
 - [Roadmap](docs/ROADMAP.md) · [Credits](CREDITS.md) · [Security](SECURITY.md) · [MIT License](LICENSE)
 
