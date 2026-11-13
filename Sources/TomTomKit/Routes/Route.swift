@@ -228,6 +228,10 @@ extension Route {
                 let d = distanceToSegment(p[i], p[a], p[b])
                 if d > bestD { bestD = d; best = i }
             }
+            // Every point lies on the chord (e.g. standing still): all keep
+            // importance 0. Splitting further would rescan the span point by
+            // point, which is quadratic.
+            guard bestD > 0 else { continue }
             let v = min(bestD, cap)
             imp[best] = v
             stack.append((a, best, v)); stack.append((best, b, v))

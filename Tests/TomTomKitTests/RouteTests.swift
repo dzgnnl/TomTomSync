@@ -152,6 +152,18 @@ private func spurRoute(points: Int = 2000) -> Route {
         #expect(abs(s.maximumDeviation - 20) < 0.5)
     }
 
+    @Test func handlesLongRunsOfIdenticalPointsQuickly() {
+        // 200,000 identical points between a start and an end: quadratic
+        // splitting would take minutes.
+        let still = [Route.Point](repeating: pt(52, 4.9), count: 200_000)
+        let r = Route(name: "still", segments: [[pt(51.99, 4.9)] + still + [pt(52.01, 4.9)]])
+        let start = Date()
+        let s = r.simplified(maximumPoints: 500)
+        #expect(Date().timeIntervalSince(start) < 5)
+        #expect(s.route.pointCount == 500)
+        #expect(s.route.segments[0].first == pt(51.99, 4.9) && s.route.segments[0].last == pt(52.01, 4.9))
+    }
+
     @Test func sharesPointsAcrossSegmentsAndKeepsTheirEnds() {
         let a = spurRoute(points: 600).segments[0]
         let b = (0..<10).map { pt(53 + Double($0) * 0.001, 5) }
