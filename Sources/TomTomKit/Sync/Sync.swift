@@ -248,6 +248,8 @@ public struct SyncSummary: Sendable {
     public var quickFixUpdated = false
     public var timeZoneUpdated = false
     public var routes: RouteSync.Summary?
+    /// Product ID (USB message 0x20) of the synced watch.
+    public var watchProductID: UInt32?
     public var warnings: [String] = []
 }
 
@@ -276,6 +278,7 @@ public enum SyncRunner {
             defer { w.close() }
             w.progress = progress
             log("Connected to TomTom \(w.model.name)")
+            s.watchProductID = try? w.productID()
             let results = try Exporter.exportAll(watch: w, root: o.root, deleteAfterExport: o.deleteAfterExport, log: log)
             s.exported = results.compactMap(\.fit)
             if let qf = quickFixData {
