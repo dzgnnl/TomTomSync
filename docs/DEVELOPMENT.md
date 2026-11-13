@@ -169,10 +169,13 @@ to the watch as part of every sync (Settings → Routes, or `ttsync routes sync`
    never gets a marker, so its unknown routes are saved on every sync.
 4. **Unreadable route files:** on any sync, if a route file on the watch can't be decoded,
    it is copied to the backup folder and the route sync stops, so it is never
-   overwritten or deleted.
+   overwritten or deleted. The same goes for the folder: if a GPX file or the folder
+   itself can't be read, the route sync stops and leaves the watch unchanged. A missing
+   folder counts as empty.
 
 **Strava** (`Routes/StravaRoutes.swift`), before connecting to the watch:
-- `GET /athletes/{id}/routes` lists the athlete's own routes. Saving someone else's
+- `GET /athletes/{id}/routes` lists the athlete's own routes, page by page until an
+  empty page (Strava can return short pages before the end). Saving someone else's
   route on Strava makes a copy, so it shows up here too. Starred routes of the
   chosen kinds are kept, newest first, 15 at most.
 - Kinds map Strava route types as follows: run = 2 Run, 5 Trail Run; walk = 3 Walk, 4 Hike;

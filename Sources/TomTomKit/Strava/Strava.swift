@@ -250,15 +250,17 @@ public final class StravaClient: @unchecked Sendable {
     public func routes() async throws -> [StravaRoute] {
         let athleteID = try await currentAthleteID()
         var all: [StravaRoute] = []
-        for page in 1...20 {   // at most 2,000 routes
+        // Strava can return a short page before the end; only an empty page
+        // marks the end. A partial list would make starred routes look removed.
+        for page in 1...50 {   // at most 5,000 routes
             var c = URLComponents(url: Self.api.appendingPathComponent("athletes/\(athleteID)/routes"), resolvingAgainstBaseURL: false)!
             c.queryItems = [.init(name: "page", value: "\(page)"), .init(name: "per_page", value: "100")]
             let data = try await get(c.url!, maximumSize: 10 * 1024 * 1024)
             let batch = try StravaRoute.decodeList(data)
+            if batch.isEmpty { return all }
             all += batch
-            if batch.count < 100 { break }
         }
-        return all
+        throw StravaError.http(200, "more than 5,000 routes; not syncing Strava routes")
     }
 
     public func routeGPX(id: String) async throws -> Data {
