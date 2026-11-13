@@ -163,8 +163,11 @@ to the watch as part of every sync (Settings → Routes, or `ttsync routes sync`
    and rewritten, and route files beyond the last slot are deleted.
 3. **First sync of a watch:** its routes that aren't in the folder are saved there as
    GPX first, so nothing is lost. The raw route files are also copied to
-   `routes/.watch-backup-<serial>/`. If any route file can't be read, the sync stops
-   instead of deleting it. A marker file `routes/.imported-<serial>` records that this has been done.
+   `routes/.watch-backup-<serial>/`. A marker file `routes/.imported-<serial>`
+   records that this has been done.
+4. **Unreadable route files:** on any sync, if a route file on the watch can't be decoded,
+   it is copied to the backup folder and the route sync stops, so it is never
+   overwritten or deleted.
 
 **Strava** (`Routes/StravaRoutes.swift`), before connecting to the watch:
 - `GET /athletes/{id}/routes` lists the athlete's own routes. Saving someone else's

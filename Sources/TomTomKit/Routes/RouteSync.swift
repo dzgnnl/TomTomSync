@@ -118,12 +118,13 @@ public enum RouteSync {
     }
 
     public enum SyncError: Error, CustomStringConvertible {
-        case unreadableRoutes([UInt32], backup: URL)
+        case unreadableRoutes([UInt32], backup: URL?)
         public var description: String {
             switch self {
             case .unreadableRoutes(let ids, let backup):
                 return "Couldn't read route file(s) \(ids.map(\.hex).joined(separator: ", ")) on the watch. "
-                    + "Not syncing routes, so they aren't deleted. Raw copies are in \(backup.path)."
+                    + "Not syncing routes, so they aren't deleted."
+                    + (backup.map { " Raw copies are in \($0.path)." } ?? "")
             }
         }
     }
@@ -159,15 +160,24 @@ public enum RouteSync {
         let serial = watch.transport.serialNumber ?? "watch"
         let marker = dir.appendingPathComponent(".imported-\(serial)")
         var pending: [(URL, Route)] = []   // dry run: imports that would be saved
-        if !fm.fileExists(atPath: marker.path) {
-            // Keep the original files too: the format was reverse engineered.
-            let backup = dir.appendingPathComponent(".watch-backup-\(serial)")
-            if !dryRun, !files.isEmpty {
-                try fm.createDirectory(at: backup, withIntermediateDirectories: true)
-                for (id, f) in files { try Data(f.bytes).write(to: backup.appendingPathComponent("\(id.hex).bin")) }
+        let firstSync = !fm.fileExists(atPath: marker.path)
+        let backup = dir.appendingPathComponent(".watch-backup-\(serial)")
+        func saveBackup(_ ids: some Sequence<UInt32>, suffix: String = "") throws {
+            try fm.createDirectory(at: backup, withIntermediateDirectories: true)
+            for id in ids { try Data(files[id]!.bytes).write(to: backup.appendingPathComponent("\(id.hex)\(suffix).bin")) }
+        }
+        // Keep the original files of a new watch: the format was reverse engineered.
+        if firstSync, !dryRun, !files.isEmpty { try saveBackup(files.keys) }
+        // Never overwrite or delete a route file we can't read, on any sync.
+        let unreadable = files.filter { $0.value.route == nil }.keys.sorted()
+        if !unreadable.isEmpty {
+            if !dryRun, !firstSync {
+                let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "")
+                try saveBackup(unreadable, suffix: "-" + stamp)
             }
-            let unreadable = files.filter { $0.value.route == nil }.keys.sorted()
-            if !unreadable.isEmpty { throw SyncError.unreadableRoutes(unreadable, backup: backup) }
+            throw SyncError.unreadableRoutes(unreadable, backup: dryRun ? nil : backup)
+        }
+        if firstSync {
 
             let inFolder = select(root: root)
             let known = (inFolder.chosen + inFolder.skipped).compactMap(\.stored)
