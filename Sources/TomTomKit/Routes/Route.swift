@@ -102,7 +102,10 @@ public enum GPX {
             case "trkseg", "rte": segments.append([])
             case "trkpt", "rtept":
                 pointCount += 1
-                guard let lat = attributes["lat"].flatMap(Double.init), let lon = attributes["lon"].flatMap(Double.init),
+                // A point must sit directly in its own segment element.
+                let parent = path.count >= 2 ? path[path.count - 2] : ""
+                guard parent == (name == "trkpt" ? "trkseg" : "rte"),
+                      let lat = attributes["lat"].flatMap(Double.init), let lon = attributes["lon"].flatMap(Double.init),
                       (-90...90).contains(lat), (-180...180).contains(lon), !segments.isEmpty else {
                     invalidPoint = "point \(pointCount) has no valid coordinate"
                     parser.abortParsing()
