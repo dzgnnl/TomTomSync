@@ -22,6 +22,10 @@ USAGE:
                                    Upload FIT files (default: everything in ~/TomTom/fit not yet
                                    uploaded, skipping activities under a minute)
   ttsync strava logout
+  ttsync routes [list]             Show the routes on the watch and in ~/TomTom/routes
+  ttsync routes sync [--dry-run]   Make the watch's routes match ~/TomTom/routes (15 max);
+                                   the first sync saves the watch's routes there as GPX
+  ttsync routes check FILE.gpx...  Show how GPX files would be converted (no watch needed)
   ttsync convert FILE.ttbin...     Convert ttbin files to FIT (no watch needed)
   ttsync files                     List all files on the watch (debug)
   ttsync dump FILEID OUT           Save a raw watch file, e.g. 0x00850000 (debug)
@@ -108,6 +112,9 @@ func readSecret(prompt: String) throws -> String {
     case "strava":
         try await strava()
 
+    case "routes":
+        try routes()
+
     case "convert":
         guard !args.isEmpty else { print(usage); return }
         for path in args {
@@ -135,6 +142,58 @@ func readSecret(prompt: String) throws -> String {
     default:
         print(usage)
     }
+}
+
+@MainActor func routes() throws {
+    let sub = args.first ?? "list"
+    if !args.isEmpty { args.removeFirst() }
+    switch sub {
+    case "list":
+        let w = try connect()
+        if !RouteSync.supportsRoutes(w) { print("This watch doesn't support routes (no Trails menu)") }
+        let files = try w.listFiles(type: RouteFile.fileType)
+        print("On the watch (\(files.count)):")
+        for f in files {
+            if let r = try? RouteFile.decode(w.readFile(f.id)) {
+                print("  \(f.id.hex)  \(r.name)  " + String(format: "%.1f km, %d points", r.length / 1000, r.pointCount))
+            } else {
+                print("  \(f.id.hex)  (unreadable, \(f.size) bytes)")
+            }
+        }
+        listFolder()
+
+    case "sync":
+        let dryRun = flag("--dry-run")
+        let w = try connect(); withProgress(w)
+        let s = try RouteSync.sync(watch: w, dryRun: dryRun, log: log)
+        if !dryRun { print("Done: \(s.written) written, \(s.deleted) deleted, \(s.onWatch.count) on the watch") }
+
+    case "check":
+        guard !args.isEmpty else { print(usage); return }
+        for path in args {
+            let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+            do {
+                let r = try GPX.read(url)
+                let s = r.simplified(maximumPoints: RouteFile.maximumPoints)
+                let bytes = RouteFile.encode(s.route, name: RouteFile.watchName(r.name))
+                print("\(url.lastPathComponent): \"\(RouteFile.watchName(r.name))\", \(r.segments.count) segment(s), "
+                      + s.summary + ", \(bytes.count) bytes")
+            } catch {
+                print("\(url.lastPathComponent): \(error)")
+            }
+        }
+
+    default:
+        print(usage)
+    }
+}
+
+func listFolder() {
+    let sel = RouteSync.select()
+    print("In \(RouteSync.folder().path) (\(sel.chosen.count) to sync):")
+    for c in sel.chosen { print("  \(c.watchName)\(c.fromStrava ? " (Strava)" : "")  \(c.simplified.summary)") }
+    for c in sel.skipped { print("  doesn't fit: \(c.url.lastPathComponent)") }
+    for (url, error) in sel.failed { print("  skipped \(url.lastPathComponent): \(error)") }
 }
 
 @MainActor func strava() async throws {
