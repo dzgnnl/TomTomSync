@@ -20,6 +20,8 @@ final class AppModel {
     var uploading: Set<String> = []
     var strava: StravaCredentials? = StravaCredentials.load()
     var stravaMessage: String?
+    /// Routes result of the last sync with a watch that supports them.
+    var routes: RouteSync.Summary?
 
     // Settings
     var autoSync: Bool { didSet { save("autoSync", autoSync) } }
@@ -27,6 +29,7 @@ final class AppModel {
     var quickFix: Bool { didSet { save("quickFix", quickFix) } }
     var timeSync: Bool { didSet { save("timeSync", timeSync) } }
     var stravaAutoUpload: Bool { didSet { save("stravaAutoUpload", stravaAutoUpload) } }
+    var routeSettings = RouteSettings.load() { didSet { routeSettings.save() } }
     var launchAtLogin: Bool {
         get { SMAppService.mainApp.status == .enabled }
         set {
@@ -112,6 +115,7 @@ final class AppModel {
         o.quickFix = quickFix
         o.timeSync = timeSync
         o.stravaUpload = stravaAutoUpload && (strava?.isLoggedIn ?? false)
+        o.routes = routeSettings
 
         let logger = SyncLog { [weak self] line in Task { @MainActor [weak self] in self?.append(line) } }
         let onProgress: (Int, Int) -> Void = { [weak self] done, total in
@@ -126,6 +130,8 @@ final class AppModel {
             var parts = ["\(s.exported.count) activit\(s.exported.count == 1 ? "y" : "ies") exported"]
             if !s.uploaded.isEmpty { parts.append("\(s.uploaded.count) uploaded to Strava") }
             if s.quickFixUpdated { parts.append("GPS QuickFix updated") }
+            if let r = s.routes, r.written + r.deleted > 0 { parts.append("routes updated") }
+            if let r = s.routes, r.supported { routes = r }
             let summary = parts.joined(separator: ", ")
             statusLine = s.warnings.isEmpty ? "Synced: \(summary)" : "Synced with warnings"
             notify(title: "TomTom synced", body: summary + (s.warnings.isEmpty ? "" : "\n" + s.warnings.joined(separator: "\n")))
@@ -192,4 +198,10 @@ final class AppModel {
     }
 
     func openFolder() { NSWorkspace.shared.open(Exporter.defaultRoot.appendingPathComponent("fit")) }
+
+    func openRoutesFolder() {
+        let dir = RouteSync.folder()
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        NSWorkspace.shared.open(dir)
+    }
 }

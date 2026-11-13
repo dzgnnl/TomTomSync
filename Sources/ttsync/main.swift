@@ -12,7 +12,7 @@ USAGE:
                                    --delete removes them from the watch after a verified save
   ttsync quickfix [--days 3|7|14]  Download GPS QuickFix data and upload it to the watch
   ttsync timesync                  Set the watch's time zone offset to this Mac's
-  ttsync sync [--delete]           export + quickfix + timesync (+ Strava upload when logged in)
+  ttsync sync [--delete]           export + quickfix + timesync + routes (+ Strava upload when logged in)
   ttsync strava login --client-id ID [--client-secret SECRET]
                                    Connect to Strava (API app from strava.com/settings/api,
                                    Authorization Callback Domain: localhost). If omitted,
@@ -23,8 +23,12 @@ USAGE:
                                    uploaded, skipping activities under a minute)
   ttsync strava logout
   ttsync routes [list]             Show the routes on the watch and in ~/TomTom/routes
-  ttsync routes sync [--dry-run]   Make the watch's routes match ~/TomTom/routes (15 max);
-                                   the first sync saves the watch's routes there as GPX
+  ttsync routes sync [--dry-run] [--no-strava]
+                                   Download starred Strava routes (types as set in the app,
+                                   default runs), then make the watch's routes match
+                                   ~/TomTom/routes (15 max). The first sync saves the
+                                   watch's routes there as GPX
+  ttsync routes strava             List your Strava routes and which ones would be synced
   ttsync routes check FILE.gpx...  Show how GPX files would be converted (no watch needed)
   ttsync convert FILE.ttbin...     Convert ttbin files to FIT (no watch needed)
   ttsync files                     List all files on the watch (debug)
@@ -113,7 +117,7 @@ func readSecret(prompt: String) throws -> String {
         try await strava()
 
     case "routes":
-        try routes()
+        try await routes()
 
     case "convert":
         guard !args.isEmpty else { print(usage); return }
@@ -144,29 +148,55 @@ func readSecret(prompt: String) throws -> String {
     }
 }
 
-@MainActor func routes() throws {
+@MainActor func routes() async throws {
     let sub = args.first ?? "list"
     if !args.isEmpty { args.removeFirst() }
     switch sub {
     case "list":
-        let w = try connect()
-        if !RouteSync.supportsRoutes(w) { print("This watch doesn't support routes (no Trails menu)") }
-        let files = try w.listFiles(type: RouteFile.fileType)
-        print("On the watch (\(files.count)):")
-        for f in files {
-            if let r = try? RouteFile.decode(w.readFile(f.id)) {
-                print("  \(f.id.hex)  \(r.name)  " + String(format: "%.1f km, %d points", r.length / 1000, r.pointCount))
-            } else {
-                print("  \(f.id.hex)  (unreadable, \(f.size) bytes)")
+        if Watch.isConnected {
+            let w = try connect()
+            if !RouteSync.supportsRoutes(w) { print("This watch doesn't support routes (no Trails menu)") }
+            let files = try w.listFiles(type: RouteFile.fileType)
+            print("On the watch (\(files.count)):")
+            for f in files {
+                if let r = try? RouteFile.decode(w.readFile(f.id)) {
+                    print("  \(f.id.hex)  \(r.name)  " + String(format: "%.1f km, %d points", r.length / 1000, r.pointCount))
+                } else {
+                    print("  \(f.id.hex)  (unreadable, \(f.size) bytes)")
+                }
             }
+        } else {
+            print("No watch connected")
         }
         listFolder()
 
     case "sync":
         let dryRun = flag("--dry-run")
+        let settings = RouteSettings.load()
+        if !flag("--no-strava"), !dryRun, let client = try? StravaClient(), client.credentials.isLoggedIn {
+            let kinds = settings.stravaKinds.map(\.rawValue).sorted().joined(separator: ", ")
+            print("Starred Strava routes: \(kinds.isEmpty ? "none" : kinds)")
+            try await StravaRouteSync.sync(client: client, kinds: settings.stravaKinds, log: log)
+        }
         let w = try connect(); withProgress(w)
         let s = try RouteSync.sync(watch: w, dryRun: dryRun, log: log)
         if !dryRun { print("Done: \(s.written) written, \(s.deleted) deleted, \(s.onWatch.count) on the watch") }
+
+    case "strava":
+        let client = try StravaClient()
+        guard client.credentials.isLoggedIn else { throw StravaError.notLoggedIn }
+        let settings = RouteSettings.load()
+        let all = try await client.routes()
+        let wanted = Set(StravaRouteSync.wanted(all, kinds: settings.stravaKinds).map(\.id))
+        let kinds = settings.stravaKinds.map(\.rawValue).sorted().joined(separator: ", ")
+        print("\(all.count) Strava route(s); syncing starred \(kinds.isEmpty ? "(none)" : kinds), newest first, 15 max")
+        for r in all.sorted(by: { $0.createdAt > $1.createdAt }) {
+            let mark = wanted.contains(r.id) ? "✓" : " "
+            print("  \(mark) \(r.starred ? "★" : " ") \(r.kind?.rawValue ?? "?")\t\(r.name)\(r.isPrivate ? " (private)" : "")")
+        }
+        if !client.credentials.canReadPrivateRoutes {
+            print("Private routes aren't included. Reconnect Strava (ttsync strava login) to allow them.")
+        }
 
     case "check":
         guard !args.isEmpty else { print(usage); return }
@@ -193,6 +223,7 @@ func listFolder() {
     print("In \(RouteSync.folder().path) (\(sel.chosen.count) to sync):")
     for c in sel.chosen { print("  \(c.watchName)\(c.fromStrava ? " (Strava)" : "")  \(c.simplified.summary)") }
     for c in sel.skipped { print("  doesn't fit: \(c.url.lastPathComponent)") }
+    for url in sel.duplicates { print("  duplicate: \(url.lastPathComponent)") }
     for (url, error) in sel.failed { print("  skipped \(url.lastPathComponent): \(error)") }
 }
 

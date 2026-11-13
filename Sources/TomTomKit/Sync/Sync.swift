@@ -238,6 +238,7 @@ public struct SyncOptions: Sendable {
     public var quickFix = true
     public var timeSync = true
     public var stravaUpload = false
+    public var routes = RouteSettings.load()
     public init() {}
 }
 
@@ -246,11 +247,12 @@ public struct SyncSummary: Sendable {
     public var uploaded: [(URL, Int64?)] = []
     public var quickFixUpdated = false
     public var timeZoneUpdated = false
+    public var routes: RouteSync.Summary?
     public var warnings: [String] = []
 }
 
 public enum SyncRunner {
-    /// export → QuickFix → time zone → Strava upload of the newly exported files.
+    /// Strava routes → export → QuickFix → time zone → routes → Strava upload of the newly exported files.
     /// Individual steps after the export log a warning instead of aborting.
     public static func run(_ o: SyncOptions, log: SyncLog, progress: ((Int, Int) -> Void)? = nil) async throws -> SyncSummary {
         var s = SyncSummary()
@@ -260,6 +262,13 @@ public enum SyncRunner {
                 quickFixData = nil; s.warnings.append("QuickFix download failed: \(error)")
             }
         } else { quickFixData = nil }
+
+        // With no route kinds chosen this makes no API calls; it only removes
+        // previously downloaded routes.
+        if o.routes.enabled, let client = try? StravaClient(), client.credentials.isLoggedIn {
+            do { try await StravaRouteSync.sync(client: client, kinds: o.routes.stravaKinds, root: o.root, log: log) }
+            catch { s.warnings.append("Strava routes: \(error)") }
+        }
 
         // All USB work happens on one connection, closed before uploading.
         do {
@@ -276,6 +285,10 @@ public enum SyncRunner {
             if o.timeSync {
                 do { s.timeZoneUpdated = try TimeSync.sync(watch: w, log: log) }
                 catch { s.warnings.append("Time sync failed: \(error)") }
+            }
+            if o.routes.enabled {
+                do { s.routes = try RouteSync.sync(watch: w, root: o.root, log: log) }
+                catch { s.warnings.append("Routes: \(error)") }
             }
         }
 

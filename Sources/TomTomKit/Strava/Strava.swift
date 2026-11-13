@@ -33,6 +33,13 @@ public struct StravaCredentials: Codable, Sendable {
     public var refreshToken: String?
     public var expiresAt: Date?
     public var athlete: String?
+    public var athleteID: Int64?
+    /// Scopes granted at login, e.g. "read,activity:write,read_all". nil for
+    /// logins made before this was stored.
+    public var scope: String?
+
+    /// Private routes need the read_all scope.
+    public var canReadPrivateRoutes: Bool { scope?.split(separator: ",").contains("read_all") ?? false }
 
     public init(clientID: String, clientSecret: String) {
         self.clientID = clientID
@@ -84,6 +91,51 @@ public struct StravaLedger: Sendable {
     }
 }
 
+/// A route from the athlete's Strava route list.
+public struct StravaRoute: Sendable, Equatable {
+    public enum Kind: String, CaseIterable, Sendable {
+        case run, walk, ride
+        /// Strava route types: 1 Ride, 2 Run, 3 Walk, 4 Hike, 5 Trail Run, 6 Gravel Ride, 7 Mountain Bike Ride.
+        init?(stravaType: Int) {
+            switch stravaType {
+            case 2, 5: self = .run
+            case 3, 4: self = .walk
+            case 1, 6, 7: self = .ride
+            default: return nil
+            }
+        }
+    }
+
+    public var id: String
+    public var name: String
+    public var kind: Kind?
+    public var starred: Bool
+    public var isPrivate: Bool
+    public var createdAt: Date
+    public var updatedAt: Date
+
+    static func decodeList(_ data: Data) throws -> [StravaRoute] {
+        struct Raw: Decodable {
+            var id_str: String?; var id: Int64?; var name: String?; var type: Int?
+            var starred: Bool?; var `private`: Bool?; var created_at: String?; var updated_at: String?
+        }
+        func date(_ s: String?) -> Date? {
+            guard let s else { return nil }
+            let f = ISO8601DateFormatter()
+            if let d = f.date(from: s) { return d }
+            f.formatOptions.insert(.withFractionalSeconds)
+            return f.date(from: s)
+        }
+        return try JSONDecoder().decode([Raw].self, from: data).compactMap { r in
+            guard let id = r.id_str ?? r.id.map(String.init), !id.isEmpty, id.allSatisfy(\.isASCII), id.allSatisfy(\.isNumber) else { return nil }
+            let created = date(r.created_at) ?? .distantPast
+            return StravaRoute(id: id, name: r.name ?? "Route", kind: r.type.flatMap(Kind.init(stravaType:)),
+                               starred: r.starred ?? false, isPrivate: r.private ?? false,
+                               createdAt: created, updatedAt: date(r.updated_at) ?? created)
+        }
+    }
+}
+
 public enum StravaUploadResult: Sendable {
     case created(activityID: Int64)
     case duplicate(activityID: Int64?)
@@ -120,7 +172,7 @@ public final class StravaClient: @unchecked Sendable {
             .init(name: "redirect_uri", value: "http://localhost:\(Self.redirectPort)/callback"),
             .init(name: "response_type", value: "code"),
             .init(name: "approval_prompt", value: "auto"),
-            .init(name: "scope", value: "read,activity:write"),
+            .init(name: "scope", value: "read,read_all,activity:write"),
             .init(name: "state", value: state),
         ]
         return c.url!
@@ -140,6 +192,7 @@ public final class StravaClient: @unchecked Sendable {
         guard let code = callback["code"] else { throw StravaError.authorizationDenied("no code") }
         let scope = callback["scope"] ?? ""
         guard scope.contains("activity:write") else { throw StravaError.missingScope(scope) }
+        credentials.scope = scope
         try await tokenRequest(["grant_type": "authorization_code", "code": code])
     }
 
@@ -151,7 +204,8 @@ public final class StravaClient: @unchecked Sendable {
             req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             _ = try? await session.data(for: req)
         }
-        credentials.accessToken = nil; credentials.refreshToken = nil; credentials.expiresAt = nil; credentials.athlete = nil
+        credentials.accessToken = nil; credentials.refreshToken = nil; credentials.expiresAt = nil
+        credentials.athlete = nil; credentials.athleteID = nil; credentials.scope = nil
         try? credentials.save()
     }
 
@@ -168,6 +222,7 @@ public final class StravaClient: @unchecked Sendable {
         if let exp = json["expires_at"] as? Double { credentials.expiresAt = Date(timeIntervalSince1970: exp) }
         if let a = json["athlete"] as? [String: Any] {
             credentials.athlete = [a["firstname"] as? String, a["lastname"] as? String].compactMap { $0 }.joined(separator: " ")
+            credentials.athleteID = (a["id"] as? NSNumber)?.int64Value ?? credentials.athleteID
         }
         try credentials.save()
     }
@@ -186,6 +241,49 @@ public final class StravaClient: @unchecked Sendable {
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(code) else { throw StravaError.http(code, String(decoding: data, as: UTF8.self)) }
         return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+    }
+
+    // MARK: Routes
+
+    /// The athlete's own routes (Strava's list has no routes of others; saving
+    /// someone else's route makes a copy). Private ones only with read_all.
+    public func routes() async throws -> [StravaRoute] {
+        let athleteID = try await currentAthleteID()
+        var all: [StravaRoute] = []
+        for page in 1...20 {   // at most 2,000 routes
+            var c = URLComponents(url: Self.api.appendingPathComponent("athletes/\(athleteID)/routes"), resolvingAgainstBaseURL: false)!
+            c.queryItems = [.init(name: "page", value: "\(page)"), .init(name: "per_page", value: "100")]
+            let data = try await get(c.url!, maximumSize: 10 * 1024 * 1024)
+            let batch = try StravaRoute.decodeList(data)
+            all += batch
+            if batch.count < 100 { break }
+        }
+        return all
+    }
+
+    public func routeGPX(id: String) async throws -> Data {
+        try await get(Self.api.appendingPathComponent("routes/\(id)/export_gpx"), maximumSize: GPX.maximumFileSize)
+    }
+
+    private func currentAthleteID() async throws -> Int64 {
+        if let id = credentials.athleteID { return id }
+        // Logins from before athleteID was stored.
+        let data = try await get(Self.api.appendingPathComponent("athlete"), maximumSize: 1024 * 1024)
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let id = (json["id"] as? NSNumber)?.int64Value else { throw StravaError.http(200, "no athlete id") }
+        credentials.athleteID = id
+        try credentials.save()
+        return id
+    }
+
+    private func get(_ url: URL, maximumSize: Int) async throws -> Data {
+        var req = URLRequest(url: url, timeoutInterval: 60)
+        req.setValue("Bearer \(try await accessToken())", forHTTPHeaderField: "Authorization")
+        let (data, resp) = try await session.data(for: req)
+        let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200..<300).contains(code) else { throw StravaError.http(code, String(decoding: data.prefix(1000), as: UTF8.self)) }
+        guard data.count <= maximumSize else { throw StravaError.http(code, "response too large (\(data.count) bytes)") }
+        return data
     }
 
     // MARK: Upload

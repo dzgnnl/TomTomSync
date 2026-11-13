@@ -8,8 +8,6 @@
 - **Music and podcast sync** ([#1](https://github.com/dzgnnl/TomTomSync/issues/1)).
   Music watches mount as a FAT32 drive with m3u8 playlists, so this needs no USB
   protocol work. Sources: Music.app playlists, a folder, podcast feeds.
-- **Route upload** ([#2](https://github.com/dzgnnl/TomTomSync/issues/2)). GPX files,
-  and later starred Strava routes, to the watch.
 - **Export to more sites** ([#3](https://github.com/dzgnnl/TomTomSync/issues/3)).
   intervals.icu first (open API), then Runalyze, plus an export folder. Garmin
   Connect, Runkeeper and Nike Run Club have no open upload API.

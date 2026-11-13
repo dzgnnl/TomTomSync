@@ -40,6 +40,8 @@ public enum RouteSync {
         /// Didn't fit in the watch's 15 slots.
         public var skipped: [Candidate] = []
         public var failed: [(URL, String)] = []
+        /// Same name and points as a route already chosen.
+        public var duplicates: [URL] = []
     }
 
     /// Reads and ranks the GPX files in the routes folder. `extra` are routes
@@ -67,7 +69,14 @@ public enum RouteSync {
                 }
             }
         }
-        let ranked = own.sorted { $0.added > $1.added } + strava.sorted { $0.added > $1.added }
+        // The same route twice (e.g. a GPX exported from Strava and also starred
+        // there) takes one slot; the own copy wins.
+        var seen: [Route] = []
+        let ranked = (own.sorted { $0.added > $1.added } + strava.sorted { $0.added > $1.added }).filter { c in
+            guard let r = c.stored else { return true }
+            if seen.contains(r) { sel.duplicates.append(c.url); return false }
+            seen.append(r); return true
+        }
         sel.chosen = Array(ranked.prefix(RouteFile.maximumRoutes))
             .sorted { $0.watchName.localizedStandardCompare($1.watchName) == .orderedAscending }
         sel.skipped = Array(ranked.dropFirst(RouteFile.maximumRoutes))
@@ -120,6 +129,8 @@ public enum RouteSync {
     }
 
     public struct Summary: Sendable {
+        /// False for watches without route support; nothing else is filled in then.
+        public var supported = true
         public var onWatch: [String] = []
         public var written = 0
         public var deleted = 0
@@ -136,6 +147,7 @@ public enum RouteSync {
         var summary = Summary()
         guard supportsRoutes(watch) else {
             log("This watch doesn't support routes (no Trails menu); skipping")
+            summary.supported = false
             return summary
         }
         let fm = FileManager.default
