@@ -25,6 +25,9 @@ the Command Line Tools. `--zip` creates `build/TomTomSync-<version>.zip`.
 | `ttsync timesync` | Set the watch's UTC offset to the Mac's |
 | `ttsync sync [--delete]` | All of the above, then Strava upload |
 | `ttsync strava login\|status\|upload\|logout` | Strava connection and backlog uploads |
+| `ttsync routes [list]` | Routes on the watch and in `~/TomTom/routes` |
+| `ttsync routes sync [--dry-run]` | Make the watch's routes match `~/TomTom/routes` (see [Routes](#routes)) |
+| `ttsync routes check FILE.gpx…` | Offline: name, length and simplification of GPX files |
 | `ttsync convert FILE.ttbin…` | Offline ttbin → FIT |
 | `ttsync files`, `ttsync dump ID OUT` | Debugging: list and save raw watch files |
 
@@ -74,6 +77,7 @@ SIGN_IDENTITY="Developer ID Application: Name (TEAMID)" NOTARY_PROFILE=<notaryto
 | `Sources/TomTomKit/TTBin` | ttbin parser, cadence, Strava description |
 | `Sources/TomTomKit/FIT` | FIT encoder, ttbin → FIT |
 | `Sources/TomTomKit/Sync` | Export, QuickFix, time sync, `SyncRunner` (shared by app and CLI) |
+| `Sources/TomTomKit/Routes` | GPX, simplification, route file (protobuf), folder → watch sync |
 | `Sources/TomTomKit/Strava` | OAuth (loopback redirect + `state`), upload, upload ledger |
 | `Sources/ttsync`, `Sources/TomTomSyncApp` | CLI; SwiftUI menu bar app |
 | `Tests/TomTomKitTests` | Unit and fuzz tests on synthetic ttbin data |
@@ -110,6 +114,7 @@ File-operation errors are at payload offset 16. Startup sequence:
 | `0x0091xxxx` | Activities (ttbin) |
 | `0x00010100` | GPS QuickFix: download `https://gpsquickfix.services.tomtom.com/fitness/sifgps.f2p{3,7,14}enc.ee`, write it, verify it, then send `1d` |
 | `0x00850000` | Settings, little-endian: `u16 type, u16 count, {u16 index, u32 value}…`; index 169 = UTC offset in seconds |
+| `0x00B80000`–`0x00B8000E` | Routes ("trails"), one per file; see [Routes](#routes) |
 
 ## ttbin format
 
@@ -138,3 +143,62 @@ smoothed over 20 s.
 
 To validate a file: `pip install garmin-fit-sdk`, then
 `Decoder(Stream.from_file(path)).read()` should return no errors.
+
+## Routes
+
+Runner 3, Spark 3 and Adventurer only. The original Spark (product ID `0x07D5`) and
+first-generation watches have no Trails menu.
+
+### Sync
+
+`~/TomTom/routes/*.gpx` (own files) and `~/TomTom/routes/Strava/*.gpx` are mirrored
+to the watch:
+
+1. **Selection:** at most 15 routes. Own files go first, then Strava, each newest
+   first (file creation date). Routes that don't fit are reported.
+2. **Order:** on the watch, the routes are sorted by name, in slots `0x00B80000` upward.
+   A slot that already holds the same route is left alone. Other slots are deleted
+   and rewritten, and route files beyond the last slot are deleted.
+3. **First sync of a watch:** its routes that aren't in the folder are saved there as
+   GPX first, so nothing is lost. The raw route files are also copied to
+   `routes/.watch-backup-<serial>/`. If any route file can't be read, the sync stops
+   instead of deleting it. A marker file `routes/.imported-<serial>` records that this has been done.
+
+**GPX:** tracks (`trkseg` → segment) and routes (`rte` → segment) are read.
+Waypoints, elevation and times are ignored. The name comes from the first `trk` or
+`rte`, then `metadata`, then the file name. On the watch the name is reduced to
+ASCII and 32 characters.
+
+**Simplification:** routes over 500 points are reduced with Douglas-Peucker,
+ranked to reach an exact point count:
+- Each point's importance is its distance to the chord at the step where
+  Douglas-Peucker would keep it, capped at its parent's importance. Segment ends are always kept.
+- The 500 most important points over all segments are kept.
+- Distances use a local equirectangular projection, measured to the chord segment
+  rather than the infinite line, so the tips of out-and-back sections stay.
+- The reported deviation is measured afterwards, between every removed point and
+  the simplified line.
+
+### Route file format
+
+Protobuf (proto2 wire format), described from the files TomTom MySports wrote. Field
+numbers are given as `#n`. Coordinates are `LatLon = { #1 fixed32 }`, degrees × 10⁷ as
+a signed 32-bit value, and `Coordinate = { #1 LatLon lat, #2 LatLon lon }`.
+
+- The root is two `#1` messages:
+  1. `{ #7 { #1 fixed32 0x1234DAEB, #2 fixed32 0x00070100 } }`: file header.
+  2. `{ #8 { #1 Track } }`: the route itself.
+- `Track`:
+  - `#1` info: `{ #1 string name, #2 bounding box, #3 bytes time }`.
+    - The bounding box is `{ #1 min lat, #2 min lon, #3 max lat, #4 max lon }`, each a `LatLon`.
+    - The time is 16 bytes: zero, then a big-endian u64 at offset 8 holding seconds
+      since 2016-03-07 06:29:57 UTC × 3.45559 (the origin and rate are empirical).
+  - `#2`, twice: `{ #1 Coordinate, #2 int32 index }`. The first and last point of the
+    first segment, with index 1 and 2.
+  - `#3` segments: `{ #1 int32 segment count, #2 segment… }`. Each segment is
+    `{ #1 int32 point count, #2 { #1 Coordinate }… }`.
+
+There is no index file: the watch lists whatever `0x00B8xxxx` files exist. MySports
+limited routes to 500 points; whether the watch enforces that is untested.
+Credit: the layout was first worked out by
+[TomTomWatch](https://github.com/scubajorgen/TomTomWatch).
