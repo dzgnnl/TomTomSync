@@ -70,8 +70,9 @@ app would need a server to keep its secret safe; that may come later ([#6](https
    Secret**, and click **Connect to Strava…**.
 3. In the browser, keep **Upload your activities** ticked and click **Authorize**.
 
-New activities are uploaded from then on, and duplicates are detected. Activities
-under a minute or 10 m are not uploaded automatically; use the upload button next to them.
+New activities are uploaded from then on, and duplicates are detected. An upload
+that fails is tried again at the next sync. Activities under a minute, or outdoor ones
+under 10 m, are not uploaded automatically; use the **Upload** button next to them.
 
 ## Troubleshooting
 
