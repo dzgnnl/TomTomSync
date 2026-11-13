@@ -72,7 +72,8 @@ public enum GPX {
         parser.shouldResolveExternalEntities = false
         parser.delegate = delegate
         guard parser.parse() else {
-            throw GPXError.invalid(parser.parserError?.localizedDescription ?? "parse error")
+            throw GPXError.invalid(delegate.invalidPoint
+                ?? parser.parserError?.localizedDescription ?? "parse error")
         }
         let segments = delegate.segments.filter { !$0.isEmpty }
         guard !segments.isEmpty else { throw GPXError.noPoints }
@@ -85,6 +86,10 @@ public enum GPX {
         var segments: [[Route.Point]] = []
         var trackName: String?
         var metadataName: String?
+        /// Set when a point is broken: the whole file is rejected rather than
+        /// quietly shortened, so a damaged copy never replaces a good one.
+        var invalidPoint: String?
+        private var pointCount = 0
         private var path: [String] = []
         private var text = ""
 
@@ -96,8 +101,13 @@ public enum GPX {
             switch name {
             case "trkseg", "rte": segments.append([])
             case "trkpt", "rtept":
+                pointCount += 1
                 guard let lat = attributes["lat"].flatMap(Double.init), let lon = attributes["lon"].flatMap(Double.init),
-                      (-90...90).contains(lat), (-180...180).contains(lon), !segments.isEmpty else { return }
+                      (-90...90).contains(lat), (-180...180).contains(lon), !segments.isEmpty else {
+                    invalidPoint = "point \(pointCount) has no valid coordinate"
+                    parser.abortParsing()
+                    return
+                }
                 segments[segments.count - 1].append(Route.Point(latitude: lat, longitude: lon))
             default: break
             }
