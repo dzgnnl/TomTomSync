@@ -116,6 +116,11 @@ private func spurRoute(points: Int = 2000) -> Route {
         #expect(throws: GPXError.self) { try GPX.parse(Data("<gpx><trk>".utf8), fallbackName: "") }
         let outOfRange = #"<gpx><trk><trkseg><trkpt lat="95" lon="2"/></trkseg></trk></gpx>"#
         #expect(throws: GPXError.self) { try GPX.parse(Data(outOfRange.utf8), fallbackName: "") }
+        // One broken point among good ones rejects the whole file.
+        for bad in [#"lat="95" lon="2""#, #"lat="x" lon="2""#, #"lon="2""#, #"lat="nan" lon="2""#] {
+            let xml = #"<gpx><trk><trkseg><trkpt lat="1" lon="2"/><trkpt "# + bad + #"/><trkpt lat="1.1" lon="2"/></trkseg></trk></gpx>"#
+            #expect(throws: GPXError.self) { try GPX.parse(Data(xml.utf8), fallbackName: "") }
+        }
     }
 
     @Test func writtenFilesReadBack() throws {
