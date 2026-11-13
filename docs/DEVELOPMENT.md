@@ -41,6 +41,10 @@ Run **Actions → Release → Run workflow** on `main` and enter the version, e.
 to a commit on `main`. The source is built and tested without release
 credentials, then separate jobs publish the release and update the cask.
 
+A published version is never replaced: running the workflow again for an existing
+release keeps its archive and only rewrites the cask, with the checksum of the
+published archive. To ship a fix, release a new version.
+
 The publishing jobs use the GitHub Actions environment `release`. The
 `if: github.ref == 'refs/heads/main'` checks live in the workflow file, so a
 workflow edited on another branch could drop them; the environment settings
