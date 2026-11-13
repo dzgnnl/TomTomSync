@@ -54,6 +54,8 @@ public enum GPXError: Error, CustomStringConvertible {
 public enum GPX {
     /// Larger files are almost certainly not a single route.
     static let maximumFileSize = 50 * 1024 * 1024
+    /// Simplification can take quadratic time on an odd track; this keeps it to seconds.
+    static let maximumPoints = 100_000
 
     public static func read(_ url: URL) throws -> Route {
         let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
@@ -102,6 +104,11 @@ public enum GPX {
             case "trkseg", "rte": segments.append([])
             case "trkpt", "rtept":
                 pointCount += 1
+                guard pointCount <= GPX.maximumPoints else {
+                    invalidPoint = "more than \(GPX.maximumPoints) points"
+                    parser.abortParsing()
+                    return
+                }
                 // A point must sit directly in its own segment element.
                 let parent = path.count >= 2 ? path[path.count - 2] : ""
                 guard parent == (name == "trkpt" ? "trkseg" : "rte"),
@@ -137,7 +144,11 @@ public enum GPX {
     /// A GPX 1.1 track with one `trkseg` per segment.
     public static func write(_ route: Route) -> Data {
         func esc(_ s: String) -> String {
-            s.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;")
+            // Control characters (possible in a name read from the watch) are not allowed in XML.
+            let s = String(String.UnicodeScalarView(s.unicodeScalars.filter {
+                ($0.value >= 0x20 || $0 == "\t" || $0 == "\n" || $0 == "\r") && $0.value != 0xFFFE && $0.value != 0xFFFF
+            }))
+            return s.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;")
                 .replacingOccurrences(of: ">", with: "&gt;").replacingOccurrences(of: "\"", with: "&quot;")
         }
         var s = """

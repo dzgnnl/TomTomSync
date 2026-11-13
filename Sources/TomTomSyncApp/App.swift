@@ -69,7 +69,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             image?.isTemplate = true
             statusItem.button?.image = image
             statusItem.button?.appearsDisabled = !(model.watchConnected || syncing)
-        } onChange: {
+        } onChange: { [weak self] in
             Task { @MainActor [weak self] in self?.updateIcon() }
         }
     }
@@ -304,7 +304,7 @@ struct SettingsView: View {
                 Toggle("Check for updates", isOn: $model.checkForUpdates)
                 if Telemetry.isConfigured {
                     Toggle("Send anonymous usage statistics", isOn: $model.shareUsage)
-                    Text("Once a day: app version, macOS version, watch model and whether Strava is connected. Nothing about activities, locations or accounts. It shows whether the app is still used.")
+                    Text("Once a day, to TelemetryDeck: app version, macOS version, watch model, whether Strava is connected and a random installation ID. Nothing about activities, locations or accounts. It shows whether the app is still used.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 LabeledContent("Export folder", value: Exporter.defaultRoot.path)
@@ -346,7 +346,7 @@ struct SettingsView: View {
                         model.stravaConfigure(clientID: clientID, clientSecret: clientSecret)
                         Task { await model.stravaLogin() }
                     }
-                    .disabled(clientID.isEmpty || clientSecret.isEmpty)
+                    .disabled(clientID.isEmpty || clientSecret.isEmpty || model.stravaLoggingIn)
                 }
                 if let m = model.stravaMessage { Text(m).font(.caption).foregroundStyle(.secondary) }
             }
@@ -354,6 +354,8 @@ struct SettingsView: View {
                 Text("Problems, questions or ideas, or just letting us know it works for you: share them on GitHub. A free account is needed.")
                     .font(.caption).foregroundStyle(.secondary)
                 Button("Send Feedback…") { model.openFeedback() }
+                Text("TomTomSync is an unofficial hobby project, not affiliated with or endorsed by TomTom or Strava.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)

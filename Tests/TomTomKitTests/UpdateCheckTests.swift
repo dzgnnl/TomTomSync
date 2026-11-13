@@ -20,3 +20,18 @@ import Testing
         #expect(r.url.absoluteString.hasSuffix("/v0.2.0"))
     }
 }
+
+@Suite struct UpdateCheckParsingTests {
+    @Test func buildsTheLinkItself() throws {
+        let json = #"{"tag_name":"v0.2.0","html_url":"file:///etc/passwd"}"#
+        let r = try UpdateCheck.parse(Data(json.utf8))
+        #expect(r.url.absoluteString == "https://github.com/dzgnnl/TomTomSync/releases/tag/v0.2.0")
+    }
+
+    @Test func rejectsATagThatIsNotAVersion() {
+        for tag in ["v1.0; rm -rf", "latest", "", "v1.0\n2", "1.0/../x"] {
+            let json = try! JSONSerialization.data(withJSONObject: ["tag_name": tag])
+            #expect(throws: (any Error).self) { try UpdateCheck.parse(json) }
+        }
+    }
+}

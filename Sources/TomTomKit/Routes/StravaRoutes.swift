@@ -46,7 +46,7 @@ public enum StravaRouteSync {
         // Remove routes that are no longer starred or of a chosen kind.
         let wantedIDs = Set(wanted.map(\.id))
         for (id, entry) in index where !wantedIDs.contains(id) {
-            try? fm.removeItem(at: dir.appendingPathComponent(entry.file))
+            if isPlainFileName(entry.file) { try? fm.removeItem(at: dir.appendingPathComponent(entry.file)) }
             index[id] = nil
             summary.removed.append(entry.file)
         }
@@ -71,10 +71,17 @@ public enum StravaRouteSync {
                 summary.failed.append(r.name)
                 continue
             }
-            if let existing { try? fm.removeItem(at: dir.appendingPathComponent(existing.file)) }
+            if let existing, isPlainFileName(existing.file) { try? fm.removeItem(at: dir.appendingPathComponent(existing.file)) }
             let file = fileName(r.name, taken: taken().subtracting(existing.map { [$0.file] } ?? []), in: dir)
             let url = dir.appendingPathComponent(file)
-            try gpx.write(to: url, options: .atomic)
+            do {
+                try gpx.write(to: url, options: .atomic)
+            } catch {
+                log("⚠︎ Strava route \(r.name) not saved: \(error.localizedDescription)")
+                summary.failed.append(r.name)
+                if existing != nil { index[r.id] = nil; try saveIndex(index, root: root) }
+                continue
+            }
             // The selection ranks by creation date: use the route's.
             try? fm.setAttributes([.creationDate: r.createdAt, .modificationDate: r.updatedAt], ofItemAtPath: url.path)
             index[r.id] = Entry(file: file, updated: r.updatedAt)
@@ -86,11 +93,17 @@ public enum StravaRouteSync {
         return summary
     }
 
+    /// Index entries are used as paths: accept only a file directly in the folder.
+    static func isPlainFileName(_ file: String) -> Bool {
+        !file.isEmpty && !file.hasPrefix(".") && !file.contains("/")
+    }
+
     static func fileName(_ name: String, taken: Set<String>, in dir: URL) -> String {
         let cleaned = name.map { "/:\\".contains($0) || $0.isNewline ? "-" : $0 }
         var base = String(cleaned).trimmingCharacters(in: .whitespaces)
         if base.isEmpty || base.hasPrefix(".") { base = "Route" }
         base = String(base.prefix(100))
+        while base.utf8.count > 200 { base.removeLast() }   // file names are limited to 255 bytes
         var file = base + ".gpx", n = 2
         while taken.contains(file) || FileManager.default.fileExists(atPath: dir.appendingPathComponent(file).path) {
             file = "\(base) \(n).gpx"; n += 1

@@ -70,7 +70,7 @@ public final class Watch {
 
     public static func connect() throws -> Watch {
         let w = Watch(transport: try HIDTransport())
-        try w.startup()
+        do { try w.startup() } catch { w.close(); throw error }
         return w
     }
 
@@ -115,28 +115,40 @@ public final class Watch {
         }
     }
 
-    public func productID() throws -> UInt32 { try request(.getProductID).u32le(0) }
+    /// A reply that must hold at least one 32-bit value (the length comes from the device).
+    private func value(_ m: Msg) throws -> [UInt8] {
+        let r = try request(m)
+        guard r.count >= 4 else { throw WatchError.badResponse("short reply (\(r.count) bytes)") }
+        return r
+    }
+
+    public func productID() throws -> UInt32 { try value(.getProductID).u32le(0) }
 
     public func firmwareVersion() throws -> String {
         String(decoding: try request(.getFirmwareVersion).prefix { $0 != 0 }, as: UTF8.self)
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    public func bleVersion() throws -> UInt32 { try request(.getBLEVersion).u32be(0) }
+    public func bleVersion() throws -> UInt32 { try value(.getBLEVersion).u32be(0) }
 
     /// The watch clock, in UTC (synchronised from GPS).
     public func currentTime() throws -> Date {
-        Date(timeIntervalSince1970: TimeInterval(try request(.getCurrentTime).u32be(0)))
+        Date(timeIntervalSince1970: TimeInterval(try value(.getCurrentTime).u32be(0)))
     }
 
     // MARK: - Files
 
+    /// Far more than a watch holds; stops a device that never ends its listing.
+    static let maximumListedFiles = 10_000
+
     public func listFiles(type: UInt32? = nil) throws -> [WatchFile] {
-        var files: [WatchFile] = []
+        var files: [WatchFile] = [], listed = 0
         var r = try request(.findFirstFile, [UInt8](repeating: 0, count: 8))
         while r.count >= 20, r.u32be(16) == 0 {
             let f = WatchFile(id: r.u32be(4), size: Int(r.u32be(12)))
             if type == nil || f.id & FileID.typeMask == type { files.append(f) }
+            listed += 1
+            guard listed <= Self.maximumListedFiles else { throw WatchError.badResponse("file list doesn't end") }
             r = try request(.findNextFile)
         }
         return files.sorted { $0.id < $1.id }
@@ -177,6 +189,8 @@ public final class Watch {
 
     public func writeFile(_ id: UInt32, _ data: [UInt8]) throws {
         try fileOp(.openFileWrite, id, name: "open for write")
+        var closed = false
+        defer { if !closed { try? fileOp(.closeFile, id, name: "close") } }
         var offset = 0
         while offset < data.count {
             let n = min(model.writeChunk, data.count - offset)
@@ -186,6 +200,7 @@ public final class Watch {
             offset += n
             progress?(offset, data.count)
         }
+        closed = true
         try fileOp(.closeFile, id, name: "close")
     }
 
