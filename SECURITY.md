@@ -5,15 +5,20 @@ Please don't open a public issue.
 
 ## What TomTomSync accesses
 
-- **The watch over USB**: it reads and deletes activities, and writes GPS QuickFix
-  and the time zone. Deleting happens only after the exported copy has been read back.
-- **Network**: `gpsquickfix.services.tomtom.com` (sends no personal data) and
-  `www.strava.com` (only if connected). No analytics, no other servers, no
-  third-party code.
+- **The watch over USB**: it reads and deletes activities, writes GPS QuickFix and
+  the time zone, and reads, writes and deletes routes. Activities are deleted only
+  after the exported copy has been read back; a watch's routes are saved to the routes
+  folder before its first route sync.
+- **Network**: `gpsquickfix.services.tomtom.com` (sends no personal data),
+  `api.github.com` (daily update check), `nom.telemetrydeck.com` (one anonymous usage
+  signal a day, see [Privacy](README.md#privacy)) and `www.strava.com` (only if
+  connected). The update check and the usage signal can be turned off in Settings.
+  No third-party code.
 - **`127.0.0.1:8723`**: runs only during Strava login (at most 5 minutes) to
   receive the OAuth redirect. A random `state` value blocks injected logins.
 - **Files**: activities in `~/TomTom/fit` and `~/TomTom/ttbin` (directories 0700;
-  newly written files 0600). Strava credentials are in
+  newly written files 0600), routes in `~/TomTom/routes` (default permissions).
+  Strava credentials are in
   `~/Library/Application Support/TomTomSync/strava.json` (folder 0700, file 0600).
 
 ## Known limitations

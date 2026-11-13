@@ -15,7 +15,8 @@ the Command Line Tools. `--zip` creates `build/TomTomSync-<version>.zip`.
 
 ## Command line
 
-`ttsync` is installed by Homebrew and shares settings, Strava login and `~/TomTom` with the app.
+`ttsync` is installed by Homebrew and shares the Strava login, route settings and
+`~/TomTom` with the app. The app's Sync switches don't apply to it.
 
 | Command | |
 |---|---|
@@ -23,8 +24,9 @@ the Command Line Tools. `--zip` creates `build/TomTomSync-<version>.zip`.
 | `ttsync export [--delete] [--out DIR]` | Save activities as `.ttbin` + `.fit`; `--delete` removes each one after its saved copy is read back |
 | `ttsync quickfix [--days 3\|7\|14]` | Update GPS QuickFix |
 | `ttsync timesync` | Set the watch's UTC offset to the Mac's |
-| `ttsync sync [--delete]` | All of the above, then Strava upload |
-| `ttsync strava login\|status\|upload\|logout` | Strava connection and backlog uploads |
+| `ttsync sync [--delete]` | Export, QuickFix, time zone and routes, then Strava upload |
+| `ttsync strava login --client-id ID [--client-secret SECRET]` | Connect to Strava |
+| `ttsync strava status\|upload\|logout` | Strava connection and backlog uploads |
 | `ttsync routes [list]` | Routes on the watch and in `~/TomTom/routes` |
 | `ttsync routes sync [--dry-run] [--no-strava]` | Download starred Strava routes, then make the watch's routes match `~/TomTom/routes` (see [Routes](#routes)) |
 | `ttsync routes strava` | Your Strava routes and which ones would be synced |
@@ -77,11 +79,11 @@ SIGN_IDENTITY="Developer ID Application: Name (TEAMID)" NOTARY_PROFILE=<notaryto
 | `Sources/TomTomKit/Protocol` | Packet framing, file operations, settings manifest |
 | `Sources/TomTomKit/TTBin` | ttbin parser, cadence, Strava description |
 | `Sources/TomTomKit/FIT` | FIT encoder, ttbin → FIT |
-| `Sources/TomTomKit/Sync` | Export, QuickFix, time sync, `SyncRunner` (shared by app and CLI) |
+| `Sources/TomTomKit/Sync` | Export, QuickFix, time sync, `SyncRunner` (shared by app and CLI), update check, usage signal |
 | `Sources/TomTomKit/Routes` | GPX, simplification, route file (protobuf), folder → watch sync |
 | `Sources/TomTomKit/Strava` | OAuth (loopback redirect + `state`), upload, upload ledger |
 | `Sources/ttsync`, `Sources/TomTomSyncApp` | CLI; SwiftUI menu bar app |
-| `Tests/TomTomKitTests` | Unit and fuzz tests on synthetic ttbin data |
+| `Tests/TomTomKitTests` | Unit and fuzz tests on synthetic data (ttbin, routes, Strava routes, update check, usage signal) |
 
 ## USB protocol
 
@@ -91,8 +93,8 @@ The watches are USB HID devices with vendor ID `0x1390`. TomTomSync uses
 | Product ID | Watches | Packet / read / write size |
 |---|---|---|
 | `0x7474` | Multi-Sport, Runner, Multi-Sport Cardio | 64 / 50 / 54 |
-| `0x7475` | Spark, Spark Music, Runner 2/3, Adventurer | 256 / 242 / 246 |
-| `0x7477` | Spark Cardio | 256 / 242 / 246 |
+| `0x7475` | Spark, Spark Music, Runner 2/3 (Music), Adventurer | 256 / 242 / 246 |
+| `0x7477` | Spark Cardio, Runner 2/3 Cardio | 256 / 242 / 246 |
 
 Packets are `[0x09, len+2, counter, msg, payload…]`; the reply starts with `0x01`
 instead. Payload integers are big-endian; the product ID reply is little-endian.
@@ -147,8 +149,9 @@ To validate a file: `pip install garmin-fit-sdk`, then
 
 ## Routes
 
-Runner 3, Spark 3 and Adventurer only. The original Spark (product ID `0x07D5`) and
-first-generation watches have no Trails menu.
+Meant for Runner 3, Spark 3 and Adventurer. First-generation watches and the original
+Spark Music (product ID `0x07D5`, no Trails menu) are skipped; other product IDs are
+assumed to support routes.
 
 ### Sync
 
@@ -184,7 +187,7 @@ to the watch as part of every sync (Settings → Routes, or `ttsync routes sync`
   `updated_at`. The file's creation date is set to the route's `created_at`.
 - `routes/Strava/.index.json` maps route IDs to files. Only those files are ever
   replaced or removed, e.g. when a route is unstarred.
-- Private routes need the `read_all` scope, requested since this version. Older logins
+- Private routes need the `read_all` scope, requested since v0.2.0. Older logins
   have to reconnect.
 - The settings (`routeSync`, `stravaRouteKinds`) live in the app's preferences
   domain `nl.dzgn.TomTomSync`, so `ttsync` uses the same ones.

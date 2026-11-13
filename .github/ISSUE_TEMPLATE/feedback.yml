@@ -16,7 +16,7 @@ body:
     id: details
     attributes:
       label: Details
-      description: What happened, or what would you like? For problems, the sync log helps (click the status line in the menu).
+      description: What happened, or what would you like? For problems, the sync log helps (click the status line in the menu). This issue is public: remove anything you'd rather not share, such as your user name in file paths.
     validations:
       required: true
   - type: input
