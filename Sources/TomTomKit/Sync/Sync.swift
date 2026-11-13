@@ -315,11 +315,19 @@ struct PendingUploads {
         save()
     }
 
-    private func save() {
-        if files.isEmpty { try? FileManager.default.removeItem(at: url); return }
-        guard let data = try? JSONEncoder().encode(files) else { return }
-        try? data.write(to: url, options: .atomic)
-        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+    /// Set when the list could not be stored: the retry is then not guaranteed.
+    private(set) var saveError: Error?
+
+    private mutating func save() {
+        do {
+            if files.isEmpty {
+                if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+            } else {
+                try JSONEncoder().encode(files).write(to: url, options: .atomic)
+                try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+            }
+            saveError = nil
+        } catch { saveError = error }
     }
 }
 
@@ -404,8 +412,12 @@ public enum SyncRunner {
                     }
                 } catch {
                     let left = pending.files.count
-                    s.warnings.append("Strava upload: \(error)" + (left > 0
+                    s.warnings.append("Strava upload: \(error)" + (left > 0 && pending.saveError == nil
                         ? " (\(left) activit\(left == 1 ? "y" : "ies") will be tried again at the next sync)" : ""))
+                }
+                if let e = pending.saveError, !pending.files.isEmpty {
+                    s.warnings.append("The list of activities still to upload could not be saved (\(e.localizedDescription)); "
+                        + "upload them with the Upload button or `ttsync strava upload`")
                 }
             }
         }
