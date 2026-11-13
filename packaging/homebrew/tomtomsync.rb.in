@@ -5,7 +5,7 @@ cask "tomtomsync" do
 
   url "https://github.com/dzgnnl/TomTomSync/releases/download/v#{version}/TomTomSync-v#{version}.zip"
   name "TomTomSync"
-  desc "Sync TomTom sports watches: FIT export, GPS QuickFix, Strava upload"
+  desc "Unofficial sync for TomTom sports watches: FIT export, routes, Strava upload"
   homepage "https://github.com/dzgnnl/TomTomSync"
 
   depends_on macos: :sonoma

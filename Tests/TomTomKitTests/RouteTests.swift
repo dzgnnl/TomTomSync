@@ -254,7 +254,7 @@ private func spurRoute(points: Int = 2000) -> Route {
     }
 
     @Test func makesSerialsSafeForPaths() {
-        #expect(RouteSync.pathSafe(serial: "HR4207I00509") == "HR4207I00509")
+        #expect(RouteSync.pathSafe(serial: "AB1234C56789") == "AB1234C56789")
         let evil = RouteSync.pathSafe(serial: "../../etc/x")!
         #expect(evil.hasPrefix("etcx-") && evil.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" })
         // Serials that clean up to the same text stay distinct.
