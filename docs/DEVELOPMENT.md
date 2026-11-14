@@ -95,7 +95,7 @@ SIGN_IDENTITY="Developer ID Application: Name (TEAMID)" NOTARY_PROFILE=<notaryto
 | `Sources/TomTomKit/Routes` | GPX, simplification, route file (protobuf), folder → watch sync |
 | `Sources/TomTomKit/Strava` | OAuth (loopback redirect + `state`), upload, upload ledger |
 | `Sources/ttsync`, `Sources/TomTomSyncApp` | CLI; SwiftUI menu bar app |
-| `Tests/TomTomKitTests` | Unit and fuzz tests on synthetic data (ttbin, routes, Strava routes, update check, usage signal) |
+| `Tests/TomTomKitTests` | Unit and fuzz tests on synthetic data (ttbin, routes, Strava routes, update check, usage signal), and export, time zone, route and upload tests against an in-memory watch (`FakeWatch`) and a stubbed Strava |
 
 ## USB protocol
 

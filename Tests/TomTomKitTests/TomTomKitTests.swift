@@ -4,7 +4,7 @@ import Testing
 
 /// Builds a synthetic ttbin: a 10-minute run with GPS, heart rate, one lap,
 /// a pause and a heart rate recovery record. No real recordings in the repo.
-private enum TTBinBuilder {
+enum TTBinBuilder {
     static let start = 1_775_030_400   // 2026-04-01 08:00 UTC
     static let localOffset: Int32 = 7200
     static let seconds = 600

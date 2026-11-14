@@ -44,12 +44,24 @@ public enum WatchModel: Int, Sendable {
     var packetSize: Int { self == .multisport ? 64 : 256 }
 }
 
+/// What `Watch` needs from a connection. `HIDTransport` is the real one; tests
+/// use an in-memory watch.
+public protocol WatchTransport: AnyObject {
+    var model: WatchModel { get }
+    var serialNumber: String? { get }
+    /// Sends one packet. `packet[0]` is the report ID (0x09 for requests).
+    func send(_ packet: [UInt8]) throws
+    /// Waits for the next input report.
+    func receive(timeout: TimeInterval) throws -> [UInt8]
+    func close()
+}
+
 /// Talks to the watch through the IOKit HID API.
 ///
 /// The watch is a vendor-defined HID device. Using IOHIDDevice (instead of
 /// libusb) means macOS keeps its own HID driver attached, so no root and no
 /// kernel-driver detaching is needed.
-public final class HIDTransport: @unchecked Sendable {
+public final class HIDTransport: WatchTransport, @unchecked Sendable {
     /// Known models use reports of 64 or 256 bytes. Keep room for descriptor
     /// variations while refusing attacker-controlled multi-gigabyte sizes.
     private static let maximumReportSize = 4096

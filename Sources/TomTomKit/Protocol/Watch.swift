@@ -36,7 +36,7 @@ public struct WatchFile: Sendable, Hashable {
     public let size: Int
 }
 
-/// Request/response protocol on top of the HID transport.
+/// Request/response protocol on top of a transport (USB HID).
 ///
 /// Packet layout (both directions):
 ///   [0] 0x09 for requests, 0x01 for responses
@@ -59,12 +59,12 @@ public final class Watch {
         case getFirmwareVersion = 0x21, unknown22 = 0x22, unknown23 = 0x23, getBLEVersion = 0x28
     }
 
-    public let transport: HIDTransport
+    public let transport: any WatchTransport
     public var model: WatchModel { transport.model }
     private var counter: UInt8 = 0
     public var progress: ((Int, Int) -> Void)?
 
-    public init(transport: HIDTransport) {
+    public init(transport: any WatchTransport) {
         self.transport = transport
     }
 

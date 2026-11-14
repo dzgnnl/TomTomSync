@@ -331,6 +331,54 @@ struct PendingUploads {
     }
 }
 
+/// Uploads the pending FIT files to Strava. Uploads that fail (no network,
+/// Strava's rate limit) stay in the list and are retried at the next sync: by
+/// then the activities are no longer on the watch.
+enum StravaUploadQueue {
+    typealias Upload = (_ fit: URL, _ description: String?) async throws -> StravaUploadResult
+
+    static func run(newlyExported: [URL], root: URL, log: SyncLog, summary s: inout SyncSummary,
+                    upload: Upload) async {
+        var pending = PendingUploads(root: root)
+        pending.add(newlyExported)
+        guard !pending.files.isEmpty else { return }
+        let fitDir = root.appendingPathComponent("fit")
+        var ledger = StravaLedger(root: root)
+        let meta = Dictionary(Exporter.exported(root: root).map { ($0.fit.lastPathComponent, $0) }) { a, _ in a }
+        do {
+            for name in pending.files {
+                let fit = fitDir.appendingPathComponent(name)
+                if ledger.contains(fit) || !FileManager.default.fileExists(atPath: fit.path) {
+                    pending.remove(name); continue
+                }
+                if meta[name]?.isTrivial ?? false {
+                    log("Skipping \(name) for Strava (too short)")
+                    pending.remove(name); continue
+                }
+                log("Uploading \(name) to Strava…")
+                do {
+                    let r = try await upload(fit, meta[name]?.activity.stravaDescription)
+                    try ledger.record(fit, activityID: r.activityID)
+                    pending.remove(name)
+                    s.uploaded.append((fit, r.activityID))
+                } catch StravaError.uploadFailed(let reason) {
+                    // Strava refused this file; trying again won't help, the others can still go.
+                    pending.remove(name)
+                    s.warnings.append("Strava refused \(name): \(reason)")
+                }
+            }
+        } catch {
+            let left = pending.files.count
+            s.warnings.append("Strava upload: \(error)" + (left > 0 && pending.saveError == nil
+                ? " (\(left) activit\(left == 1 ? "y" : "ies") will be tried again at the next sync)" : ""))
+        }
+        if let e = pending.saveError, !pending.files.isEmpty {
+            s.warnings.append("The list of activities still to upload could not be saved (\(e.localizedDescription)); "
+                + "upload them with the Upload button or `ttsync strava upload`")
+        }
+    }
+}
+
 public enum SyncRunner {
     /// Strava routes → export → QuickFix → time zone → routes → Strava upload of the newly exported files.
     /// Individual steps after the export log a warning instead of aborting.
@@ -378,47 +426,10 @@ public enum SyncRunner {
         }
 
         if o.stravaUpload {
-            // Uploads that fail (no network, Strava's rate limit) are retried at
-            // the next sync: by then the activities are no longer on the watch.
-            var pending = PendingUploads(root: o.root)
-            pending.add(s.exported)
-            let fitDir = o.root.appendingPathComponent("fit")
-            let queue = pending.files.map { fitDir.appendingPathComponent($0) }
-            if !queue.isEmpty {
-                var ledger = StravaLedger(root: o.root)
-                let meta = Dictionary(Exporter.exported(root: o.root).map { ($0.fit.lastPathComponent, $0) }) { a, _ in a }
-                do {
-                    let client = try StravaClient()
-                    for fit in queue {
-                        let name = fit.lastPathComponent
-                        if ledger.contains(fit) || !FileManager.default.fileExists(atPath: fit.path) {
-                            pending.remove(name); continue
-                        }
-                        if meta[name]?.isTrivial ?? false {
-                            log("Skipping \(name) for Strava (too short)")
-                            pending.remove(name); continue
-                        }
-                        log("Uploading \(name) to Strava…")
-                        do {
-                            let r = try await client.upload(fit: fit, description: meta[name]?.activity.stravaDescription)
-                            try ledger.record(fit, activityID: r.activityID)
-                            pending.remove(name)
-                            s.uploaded.append((fit, r.activityID))
-                        } catch StravaError.uploadFailed(let reason) {
-                            // Strava refused this file; trying again won't help, the others can still go.
-                            pending.remove(name)
-                            s.warnings.append("Strava refused \(name): \(reason)")
-                        }
-                    }
-                } catch {
-                    let left = pending.files.count
-                    s.warnings.append("Strava upload: \(error)" + (left > 0 && pending.saveError == nil
-                        ? " (\(left) activit\(left == 1 ? "y" : "ies") will be tried again at the next sync)" : ""))
-                }
-                if let e = pending.saveError, !pending.files.isEmpty {
-                    s.warnings.append("The list of activities still to upload could not be saved (\(e.localizedDescription)); "
-                        + "upload them with the Upload button or `ttsync strava upload`")
-                }
+            let client = try? StravaClient()
+            await StravaUploadQueue.run(newlyExported: s.exported, root: o.root, log: log, summary: &s) { fit, description in
+                guard let client else { throw StravaError.notConfigured }
+                return try await client.upload(fit: fit, description: description)
             }
         }
         for w in s.warnings { log("⚠︎ \(w)") }
