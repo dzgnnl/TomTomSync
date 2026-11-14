@@ -266,7 +266,8 @@ public enum RouteSync {
     private static func availableURL(in dir: URL, name: String, taken: Set<String>) -> URL {
         let base = name.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-")
             .trimmingCharacters(in: .whitespaces)
-        let safe = base.isEmpty || base.hasPrefix(".") ? "Route" : base
+        var safe = base.isEmpty || base.hasPrefix(".") ? "Route" : base
+        while safe.utf8.count > 200 { safe.removeLast() }   // file names are limited to 255 bytes
         var url = dir.appendingPathComponent(safe + ".gpx"), n = 2
         while FileManager.default.fileExists(atPath: url.path) || taken.contains(url.lastPathComponent) {
             url = dir.appendingPathComponent("\(safe) \(n).gpx"); n += 1

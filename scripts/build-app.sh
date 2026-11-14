@@ -50,6 +50,7 @@ cp "$BIN/TomTomSyncApp" "$APP/Contents/MacOS/TomTomSync"
 cp "$BIN/ttsync" "$APP/Contents/MacOS/ttsync"   # Homebrew links this as `ttsync`
 cp "$BIN/ttsync" build/ttsync
 cp packaging/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"   # from scripts/make-icon.swift
+cp LICENSE CREDITS.md "$APP/Contents/Resources/"   # CREDITS.md holds the notices of the projects this builds on
 
 cat > "$APP/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>

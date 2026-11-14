@@ -20,6 +20,7 @@ final class AppModel {
     var uploading: Set<String> = []
     var strava: StravaCredentials? = StravaCredentials.load()
     var stravaMessage: String?
+    var stravaLoggingIn = false
     /// Routes result of the last sync with a watch that supports them.
     var routes: RouteSync.Summary?
     var update: UpdateCheck.Release?
@@ -142,6 +143,7 @@ final class AppModel {
             phase = .idle
             progress = nil
             reloadActivities()
+            strava = StravaCredentials.load()   // the sync may have refreshed the token
             var parts = ["\(s.exported.count) activit\(s.exported.count == 1 ? "y" : "ies") exported"]
             if !s.uploaded.isEmpty { parts.append("\(s.uploaded.count) uploaded to Strava") }
             if s.quickFixUpdated { parts.append("GPS QuickFix updated") }
@@ -153,6 +155,8 @@ final class AppModel {
         } catch {
             phase = .failed("\(error)")
             progress = nil
+            reloadActivities()   // activities exported before the failure
+            strava = StravaCredentials.load()
             statusLine = "Sync failed"
             append("Error: \(error)")
             notify(title: "TomTom sync failed", body: "\(error)")
@@ -169,7 +173,9 @@ final class AppModel {
     }
 
     func stravaLogin() async {
-        guard let c = strava else { return }
+        guard let c = strava, !stravaLoggingIn else { return }
+        stravaLoggingIn = true
+        defer { stravaLoggingIn = false }
         stravaMessage = "Waiting for authorization in your browser…"
         let client = StravaClient(credentials: c)
         do {
@@ -189,12 +195,15 @@ final class AppModel {
     }
 
     func upload(_ a: ExportedActivity) async {
+        // A sync or `ttsync` may have refreshed the token or uploaded since.
+        strava = StravaCredentials.load()
         guard let c = strava, c.isLoggedIn else { return }
         uploading.insert(a.id)
         defer { uploading.remove(a.id) }
         let client = StravaClient(credentials: c)
         do {
             let r = try await client.upload(fit: a.fit, description: a.activity.stravaDescription)
+            ledger = StravaLedger()
             try ledger.record(a.fit, activityID: r.activityID)
             strava = client.credentials
             stravaMessage = nil
@@ -272,9 +281,9 @@ final class AppModel {
         let alert = NSAlert()
         alert.messageText = "Help decide TomTomSync's future"
         alert.informativeText = """
-            Once a day, TomTomSync sends an anonymous signal: the app version, macOS version, \
-            watch model and whether Strava is connected. Nothing about your activities, \
-            locations or accounts.
+            Once a day, TomTomSync sends an anonymous signal to TelemetryDeck (EU): the app \
+            version, macOS version, watch model, whether Strava is connected, and a random \
+            installation ID. Nothing about your activities, locations or accounts.
 
             It only shows how many people still use the app. You can turn it off any time \
             in Settings.
@@ -318,7 +327,11 @@ final class AppModel {
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: c, trigger: nil))
     }
 
-    func openFolder() { NSWorkspace.shared.open(Exporter.defaultRoot.appendingPathComponent("fit")) }
+    func openFolder() {
+        let dir = Exporter.defaultRoot.appendingPathComponent("fit")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        NSWorkspace.shared.open(dir)
+    }
 
     func openRoutesFolder() {
         let dir = RouteSync.folder()

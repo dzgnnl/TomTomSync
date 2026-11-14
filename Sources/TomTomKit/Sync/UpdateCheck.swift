@@ -13,16 +13,22 @@ public enum UpdateCheck {
     public static func latest() async throws -> Release {
         var request = URLRequest(url: latestURL, timeoutInterval: 20)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await Telemetry.plainSession.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard status == 200 else { throw WatchError.badResponse("update check failed (HTTP \(status))") }
         return try parse(data)
     }
 
     static func parse(_ data: Data) throws -> Release {
-        struct Body: Decodable { var tag_name: String; var html_url: URL }
+        struct Body: Decodable { var tag_name: String }
         let b = try JSONDecoder().decode(Body.self, from: data)
-        return Release(version: b.tag_name.hasPrefix("v") ? String(b.tag_name.dropFirst()) : b.tag_name, url: b.html_url)
+        let version = b.tag_name.hasPrefix("v") ? String(b.tag_name.dropFirst()) : b.tag_name
+        // The version is shown and put in a link: accept only a plain version number.
+        guard version.range(of: #"^\d+(\.\d+)*$"#, options: .regularExpression) != nil,
+              let url = URL(string: "https://github.com/dzgnnl/TomTomSync/releases/tag/v\(version)") else {
+            throw WatchError.badResponse("update check: unexpected version \(b.tag_name.prefix(20))")
+        }
+        return Release(version: version, url: url)
     }
 
     /// Compares dotted version numbers ("0.10.0" > "0.9.1"). A leading "v" and

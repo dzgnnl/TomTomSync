@@ -41,8 +41,13 @@ public enum Exporter {
     /// Downloads every activity from the watch, stores the raw ttbin and a FIT
     /// conversion under `root`, and optionally deletes the activity from the
     /// watch once the raw file is safely on disk (read back and compared).
+    ///
+    /// An activity that can't be read or stored is reported through `onFailure`
+    /// and skipped, so one bad file doesn't hold up the others. After two
+    /// failures in a row the connection is assumed to be gone and the export
+    /// stops; what was exported until then is still returned.
     public static func exportAll(watch: Watch, root: URL = defaultRoot, deleteAfterExport: Bool,
-                                 log: SyncLog) throws -> [ExportResult] {
+                                 log: SyncLog, onFailure: ((String) -> Void)? = nil) throws -> [ExportResult] {
         let fm = FileManager.default
         let ttbinDir = root.appendingPathComponent("ttbin"), fitDir = root.appendingPathComponent("fit")
         try fm.createDirectory(at: ttbinDir, withIntermediateDirectories: true,
@@ -59,44 +64,71 @@ public enum Exporter {
         let serial = watch.transport.serialNumber.flatMap { UInt32($0, radix: 16) }
 
         var results: [ExportResult] = []
+        var failuresInARow = 0
         for (i, f) in files.enumerated() {
             log("[\(i + 1)/\(files.count)] Reading \(f.id.hex) (\(f.size / 1024) kB)…")
-            let data = try watch.readFile(f.id)
-            let activity = try? TTBinParser.parse(data)
-            let base = baseName(for: activity, fileID: f.id)
-
-            // The human-readable name has only second-level precision. If two
-            // activities of the same sport share that timestamp, keep both
-            // instead of silently replacing an earlier export.
-            let uniqueBase = availableBaseName(base, for: data, fileID: f.id, ttbinDir: ttbinDir, fitDir: fitDir)
-            let ttbinURL = ttbinDir.appendingPathComponent(uniqueBase + ".ttbin")
-            try Data(data).write(to: ttbinURL, options: .atomic)
-            try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: ttbinURL.path)
-            let safe = (try? Data(contentsOf: ttbinURL)) == Data(data)
-
-            var fitURL: URL?
             do {
-                let url = fitDir.appendingPathComponent(uniqueBase + ".fit")
-                try convert(ttbin: data, to: url, serialNumber: serial)
-                fitURL = url
-                log("    → \(url.path)")
+                results.append(try export(f, watch: watch, serial: serial, ttbinDir: ttbinDir, fitDir: fitDir,
+                                          deleteAfterExport: deleteAfterExport, log: log, onFailure: onFailure))
+                failuresInARow = 0
             } catch {
-                log("    ⚠︎ FIT conversion failed (\(error)); raw ttbin kept at \(ttbinURL.path)")
+                let message = "Activity \(f.id.hex) not exported: \(error)"
+                log("    ⚠︎ \(message)")
+                onFailure?(message)
+                failuresInARow += 1
+                if failuresInARow == 2 {
+                    if i + 1 < files.count { onFailure?("Export stopped; \(files.count - i - 1) more activit\(files.count - i - 1 == 1 ? "y" : "ies") left on the watch") }
+                    break
+                }
             }
+        }
+        return results
+    }
 
-            var deleted = false
-            if deleteAfterExport {
-                if safe {
+    private static func export(_ f: WatchFile, watch: Watch, serial: UInt32?, ttbinDir: URL, fitDir: URL,
+                               deleteAfterExport: Bool, log: SyncLog, onFailure: ((String) -> Void)?) throws -> ExportResult {
+        let fm = FileManager.default
+        let data = try watch.readFile(f.id)
+        let activity = try? TTBinParser.parse(data)
+        let base = baseName(for: activity, fileID: f.id)
+
+        // The human-readable name has only second-level precision. If two
+        // activities of the same sport share that timestamp, keep both
+        // instead of silently replacing an earlier export.
+        let uniqueBase = availableBaseName(base, for: data, fileID: f.id, ttbinDir: ttbinDir, fitDir: fitDir)
+        let ttbinURL = ttbinDir.appendingPathComponent(uniqueBase + ".ttbin")
+        try Data(data).write(to: ttbinURL, options: .atomic)
+        try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: ttbinURL.path)
+        let safe = (try? Data(contentsOf: ttbinURL)) == Data(data)
+
+        var fitURL: URL?
+        do {
+            let url = fitDir.appendingPathComponent(uniqueBase + ".fit")
+            try convert(ttbin: data, to: url, serialNumber: serial)
+            fitURL = url
+            log("    → \((url.path as NSString).abbreviatingWithTildeInPath)")
+        } catch {
+            log("    ⚠︎ FIT conversion failed (\(error)); raw ttbin kept at \((ttbinURL.path as NSString).abbreviatingWithTildeInPath)")
+            onFailure?("\(ttbinURL.lastPathComponent) could not be converted to FIT; the watch's file is kept in the ttbin folder")
+        }
+
+        var deleted = false
+        if deleteAfterExport {
+            if safe {
+                // The activity is stored either way; it is exported again next time.
+                do {
                     try watch.deleteFile(f.id)
                     deleted = true
                     log("    deleted from watch")
-                } else {
-                    log("    ⚠︎ not deleting: could not verify \(ttbinURL.lastPathComponent) on disk")
+                } catch {
+                    log("    ⚠︎ could not delete from watch: \(error)")
+                    onFailure?("Activity \(f.id.hex) could not be deleted from the watch: \(error)")
                 }
+            } else {
+                log("    ⚠︎ not deleting: could not verify \(ttbinURL.lastPathComponent) on disk")
             }
-            results.append(ExportResult(ttbin: ttbinURL, fit: fitURL, activity: activity, deletedFromWatch: deleted))
         }
-        return results
+        return ExportResult(ttbin: ttbinURL, fit: fitURL, activity: activity, deletedFromWatch: deleted)
     }
 
     /// `base`, or `base_<fileID>[_n]` when that name belongs to a different
@@ -213,7 +245,11 @@ public struct ExportedActivity: Identifiable, Sendable {
     public var activity: Activity
 
     /// Activities too short to be worth uploading (false starts).
-    public var isTrivial: Bool { timerTime < 60 || distance < 10 }
+    public var isTrivial: Bool {
+        // Indoor activities have no distance; outdoors, a few metres is a false start.
+        let indoor: Set<TTSport> = [.gym, .freestyle, .indoorCycling, .swimming]
+        return timerTime < 60 || (distance < 10 && !(sport.map(indoor.contains) ?? false))
+    }
 }
 
 extension Exporter {
@@ -253,6 +289,48 @@ public struct SyncSummary: Sendable {
     public var warnings: [String] = []
 }
 
+/// FIT files that still have to go to Strava, kept in `strava-pending.json`.
+/// Only files exported while Strava upload was on are listed.
+struct PendingUploads {
+    private(set) var files: [String]
+    private let url: URL
+
+    init(root: URL) {
+        url = root.appendingPathComponent("strava-pending.json")
+        files = (try? JSONDecoder().decode([String].self, from: Data(contentsOf: url))) ?? []
+        // Entries are used as file names in the fit folder.
+        files.removeAll { $0.contains("/") || $0.hasPrefix(".") || !$0.hasSuffix(".fit") }
+    }
+
+    mutating func add(_ fits: [URL]) {
+        let new = fits.map(\.lastPathComponent).filter { !files.contains($0) }
+        guard !new.isEmpty else { return }
+        files += new
+        save()
+    }
+
+    mutating func remove(_ file: String) {
+        guard files.contains(file) else { return }
+        files.removeAll { $0 == file }
+        save()
+    }
+
+    /// Set when the list could not be stored: the retry is then not guaranteed.
+    private(set) var saveError: Error?
+
+    private mutating func save() {
+        do {
+            if files.isEmpty {
+                if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
+            } else {
+                try JSONEncoder().encode(files).write(to: url, options: .atomic)
+                try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+            }
+            saveError = nil
+        } catch { saveError = error }
+    }
+}
+
 public enum SyncRunner {
     /// Strava routes → export → QuickFix → time zone → routes → Strava upload of the newly exported files.
     /// Individual steps after the export log a warning instead of aborting.
@@ -279,7 +357,11 @@ public enum SyncRunner {
             w.progress = progress
             log("Connected to TomTom \(w.model.name)")
             s.watchProductID = try? w.productID()
-            let results = try Exporter.exportAll(watch: w, root: o.root, deleteAfterExport: o.deleteAfterExport, log: log)
+            var failures: [String] = []
+            let results = try Exporter.exportAll(watch: w, root: o.root, deleteAfterExport: o.deleteAfterExport, log: log) {
+                failures.append($0)
+            }
+            s.warnings += failures
             s.exported = results.compactMap(\.fit)
             if let qf = quickFixData {
                 do { try QuickFix.upload(qf, to: w, log: log); s.quickFixUpdated = true }
@@ -295,22 +377,48 @@ public enum SyncRunner {
             }
         }
 
-        if o.stravaUpload, !s.exported.isEmpty {
-            do {
-                let client = try StravaClient()
+        if o.stravaUpload {
+            // Uploads that fail (no network, Strava's rate limit) are retried at
+            // the next sync: by then the activities are no longer on the watch.
+            var pending = PendingUploads(root: o.root)
+            pending.add(s.exported)
+            let fitDir = o.root.appendingPathComponent("fit")
+            let queue = pending.files.map { fitDir.appendingPathComponent($0) }
+            if !queue.isEmpty {
                 var ledger = StravaLedger(root: o.root)
                 let meta = Dictionary(Exporter.exported(root: o.root).map { ($0.fit.lastPathComponent, $0) }) { a, _ in a }
-                for fit in s.exported where !ledger.contains(fit) {
-                    if meta[fit.lastPathComponent]?.isTrivial ?? false {
-                        log("Skipping \(fit.lastPathComponent) for Strava (under a minute)"); continue
+                do {
+                    let client = try StravaClient()
+                    for fit in queue {
+                        let name = fit.lastPathComponent
+                        if ledger.contains(fit) || !FileManager.default.fileExists(atPath: fit.path) {
+                            pending.remove(name); continue
+                        }
+                        if meta[name]?.isTrivial ?? false {
+                            log("Skipping \(name) for Strava (too short)")
+                            pending.remove(name); continue
+                        }
+                        log("Uploading \(name) to Strava…")
+                        do {
+                            let r = try await client.upload(fit: fit, description: meta[name]?.activity.stravaDescription)
+                            try ledger.record(fit, activityID: r.activityID)
+                            pending.remove(name)
+                            s.uploaded.append((fit, r.activityID))
+                        } catch StravaError.uploadFailed(let reason) {
+                            // Strava refused this file; trying again won't help, the others can still go.
+                            pending.remove(name)
+                            s.warnings.append("Strava refused \(name): \(reason)")
+                        }
                     }
-                    log("Uploading \(fit.lastPathComponent) to Strava…")
-                    let r = try await client.upload(fit: fit, description: meta[fit.lastPathComponent]?.activity.stravaDescription)
-                    try ledger.record(fit, activityID: r.activityID)
-                    s.uploaded.append((fit, r.activityID))
+                } catch {
+                    let left = pending.files.count
+                    s.warnings.append("Strava upload: \(error)" + (left > 0 && pending.saveError == nil
+                        ? " (\(left) activit\(left == 1 ? "y" : "ies") will be tried again at the next sync)" : ""))
                 }
-            } catch {
-                s.warnings.append("Strava upload failed: \(error)")
+                if let e = pending.saveError, !pending.files.isEmpty {
+                    s.warnings.append("The list of activities still to upload could not be saved (\(e.localizedDescription)); "
+                        + "upload them with the Upload button or `ttsync strava upload`")
+                }
             }
         }
         for w in s.warnings { log("⚠︎ \(w)") }

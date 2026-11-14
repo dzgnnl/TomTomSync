@@ -58,14 +58,24 @@ public enum Telemetry {
         return try JSONSerialization.data(withJSONObject: [event], options: [.sortedKeys])
     }
 
+    /// For the usage signal and the update check: no cookies, no cache, and no
+    /// language list or system details in the headers.
+    static let plainSession: URLSession = {
+        let config = URLSessionConfiguration.ephemeral
+        config.httpCookieAcceptPolicy = .never
+        config.httpShouldSetCookies = false
+        config.httpAdditionalHeaders = ["User-Agent": "TomTomSync", "Accept-Language": "en"]
+        return URLSession(configuration: config)
+    }()
+
     public static func send(_ info: Info, installID: String, testMode: Bool) async throws {
         guard isConfigured else { return }
         var req = URLRequest(url: URL(string: "https://nom.telemetrydeck.com/v3/\(namespace)/")!, timeoutInterval: 20)
         req.httpMethod = "POST"
         req.setValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type")
         req.httpBody = try body(info, installID: installID, testMode: testMode)
-        let (_, response) = try await URLSession.shared.data(for: req)
+        let (_, response) = try await plainSession.data(for: req)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        guard status == 200 else { throw WatchError.badResponse("telemetry: HTTP \(status)") }
+        guard (200..<300).contains(status) else { throw WatchError.badResponse("telemetry: HTTP \(status)") }
     }
 }
