@@ -423,9 +423,10 @@ private func route(_ id: String, _ name: String, type: Int, starred: Bool = true
 
     @Test func storesSettings() throws {
         let d = try #require(UserDefaults(suiteName: "TomTomSyncTests-\(UUID().uuidString)"))
-        #expect(RouteSettings.load(d).enabled && RouteSettings.load(d).stravaKinds == [.run])
-        RouteSettings(enabled: false, stravaKinds: [.walk, .ride]).save(d)
+        // Off until the user turns it on.
+        #expect(!RouteSettings.load(d).enabled && RouteSettings.load(d).stravaKinds == [.run])
+        RouteSettings(enabled: true, stravaKinds: [.walk, .ride]).save(d)
         let s = RouteSettings.load(d)
-        #expect(!s.enabled && s.stravaKinds == [.walk, .ride])
+        #expect(s.enabled && s.stravaKinds == [.walk, .ride])
     }
 }

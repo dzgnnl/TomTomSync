@@ -155,7 +155,11 @@ To validate a file: `pip install garmin-fit-sdk`, then
 
 Meant for Runner 3, Spark 3 and Adventurer. First-generation watches and the original
 Spark Music (product ID `0x07D5`, no Trails menu) are skipped; other product IDs are
-assumed to support routes.
+assumed to support routes. A watch can't be asked: the original Spark Music accepts a
+route file without an error and returns it unchanged, it just has no menu to show it.
+That is why route sync is off by default (`routeSync` in the app's preferences; for
+`ttsync sync` without the app: `defaults write nl.dzgn.TomTomSync routeSync -bool true`).
+`ttsync routes sync` works regardless of the setting.
 
 ### Sync
 
