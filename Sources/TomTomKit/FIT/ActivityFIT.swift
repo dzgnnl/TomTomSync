@@ -7,6 +7,8 @@ public enum ActivityFIT {
     private static let record: UInt16 = 20, event: UInt16 = 21, deviceInfo: UInt16 = 23, activity: UInt16 = 34
 
     private static let manufacturerTomTom: Int64 = 71
+    /// One name for every model; the watch's serial number is left out on purpose.
+    private static let productName = "TomTom GPS Watch"
 
     /// FIT (sport, sub_sport) for a TomTom activity type.
     static func fitSport(_ s: TTSport?) -> (Int64, Int64) {
@@ -36,7 +38,7 @@ public enum ActivityFIT {
     private static func cm(_ m: Double?) -> Int64? { scaled(m, 100) }
     private static let ts = FITWriter.timestamp
 
-    public static func encode(_ a: Activity, serialNumber: UInt32? = nil) -> [UInt8] {
+    public static func encode(_ a: Activity) -> [UInt8] {
         var w = FITWriter()
         let (sport, subSport) = fitSport(a.sport)
         let start = min(a.periods.first?.start ?? .distantFuture, a.points.first?.time ?? a.startTime)
@@ -54,17 +56,14 @@ public enum ActivityFIT {
             .init(number: 4, type: .uint32),     // time_created
             .string(8, bytes: 32),               // product_name
         ]))
-        let productName = TomTomProduct.name(a.productID)
-        w.write(fileID, [Int64(4), manufacturerTomTom, Int64(a.productID), serialNumber.map { Int64($0) } ?? 0,
-                         ts(a.startTime), productName])
+        w.write(fileID, [Int64(4), manufacturerTomTom, Int64(a.productID), nil, ts(a.startTime), productName])
 
         // device_info for the recording device (device_index 0 = creator)
         w.define(.init(global: deviceInfo, fields: [
             .init(number: 253, type: .uint32), .init(number: 0, type: .uint8), .init(number: 2, type: .uint16),
             .init(number: 4, type: .uint16), .init(number: 3, type: .uint32z), .string(27, bytes: 32),
         ]))
-        w.write(deviceInfo, [ts(a.startTime), Int64(0), manufacturerTomTom, Int64(a.productID),
-                             serialNumber.map { Int64($0) } ?? 0, productName])
+        w.write(deviceInfo, [ts(a.startTime), Int64(0), manufacturerTomTom, Int64(a.productID), nil, productName])
 
         // event: timer start/stop
         w.define(.init(global: event, fields: [

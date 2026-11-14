@@ -78,7 +78,6 @@ public final class HIDTransport: WatchTransport, @unchecked Sendable {
     private let inputBufferSize: Int
     private let outputReportSize: Int
     private var runLoop: CFRunLoop?
-    private var thread: Thread?
 
     public static func findWatch() -> (IOHIDDevice, WatchModel)? {
         let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
@@ -151,7 +150,6 @@ public final class HIDTransport: WatchTransport, @unchecked Sendable {
         }
         t.name = "TomTomKit.HID"
         t.start()
-        thread = t
         ready.wait()
     }
 
