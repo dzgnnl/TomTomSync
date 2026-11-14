@@ -1,15 +1,5 @@
 import Foundation
 
-/// Names for the product ID in the ttbin header (also reported by USB message 0x20).
-public enum TomTomProduct {
-    /// Confirmed mappings only. Unknown IDs fall back to a generic name.
-    static let names: [UInt16: String] = [:]
-
-    public static func name(_ productID: UInt16) -> String {
-        names[productID] ?? "TomTom GPS Watch"
-    }
-}
-
 extension Activity {
     public var distance: Double { summaryDistance ?? points.last?.distance ?? 0 }
 

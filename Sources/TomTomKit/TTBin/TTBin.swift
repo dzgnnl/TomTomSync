@@ -67,7 +67,6 @@ public struct Activity: Sendable {
 
     public var endTime: Date { periods.last?.end ?? points.last?.time ?? startTime }
     public var timerTime: TimeInterval { periods.reduce(0) { $0 + $1.end.timeIntervalSince($1.start) } }
-    public var hasGPS: Bool { points.contains { $0.latitude != nil } }
 }
 
 public enum TTBinError: Error, CustomStringConvertible {

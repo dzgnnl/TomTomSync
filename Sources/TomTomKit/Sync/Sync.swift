@@ -1,6 +1,6 @@
 import Foundation
 
-/// High-level operations shared by the CLI and (later) the menu bar app.
+/// High-level operations shared by the CLI and the menu bar app.
 public struct SyncLog {
     public var emit: (String) -> Void
     public init(_ emit: @escaping (String) -> Void) { self.emit = emit }
@@ -31,9 +31,9 @@ public enum Exporter {
 
     /// Converts ttbin bytes into a FIT file next to it in `fitDir`.
     @discardableResult
-    public static func convert(ttbin data: [UInt8], to fitURL: URL, serialNumber: UInt32? = nil) throws -> Activity {
+    public static func convert(ttbin data: [UInt8], to fitURL: URL) throws -> Activity {
         let a = try TTBinParser.parse(data)
-        try Data(ActivityFIT.encode(a, serialNumber: serialNumber)).write(to: fitURL, options: .atomic)
+        try Data(ActivityFIT.encode(a)).write(to: fitURL, options: .atomic)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fitURL.path)
         return a
     }
@@ -61,14 +61,13 @@ public enum Exporter {
 
         let files = try watch.listFiles(type: FileID.ttbinType)
         log("\(files.count) activit\(files.count == 1 ? "y" : "ies") on the watch")
-        let serial = watch.transport.serialNumber.flatMap { UInt32($0, radix: 16) }
 
         var results: [ExportResult] = []
         var failuresInARow = 0
         for (i, f) in files.enumerated() {
             log("[\(i + 1)/\(files.count)] Reading \(f.id.hex) (\(f.size / 1024) kB)…")
             do {
-                results.append(try export(f, watch: watch, serial: serial, ttbinDir: ttbinDir, fitDir: fitDir,
+                results.append(try export(f, watch: watch, ttbinDir: ttbinDir, fitDir: fitDir,
                                           deleteAfterExport: deleteAfterExport, log: log, onFailure: onFailure))
                 failuresInARow = 0
             } catch {
@@ -85,7 +84,7 @@ public enum Exporter {
         return results
     }
 
-    private static func export(_ f: WatchFile, watch: Watch, serial: UInt32?, ttbinDir: URL, fitDir: URL,
+    private static func export(_ f: WatchFile, watch: Watch, ttbinDir: URL, fitDir: URL,
                                deleteAfterExport: Bool, log: SyncLog, onFailure: ((String) -> Void)?) throws -> ExportResult {
         let fm = FileManager.default
         let data = try watch.readFile(f.id)
@@ -104,7 +103,7 @@ public enum Exporter {
         var fitURL: URL?
         do {
             let url = fitDir.appendingPathComponent(uniqueBase + ".fit")
-            try convert(ttbin: data, to: url, serialNumber: serial)
+            try convert(ttbin: data, to: url)
             fitURL = url
             log("    → \((url.path as NSString).abbreviatingWithTildeInPath)")
         } catch {

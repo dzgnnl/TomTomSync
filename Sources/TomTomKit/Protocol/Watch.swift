@@ -129,8 +129,6 @@ public final class Watch {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    public func bleVersion() throws -> UInt32 { try value(.getBLEVersion).u32be(0) }
-
     /// The watch clock, in UTC (synchronised from GPS).
     public func currentTime() throws -> Date {
         Date(timeIntervalSince1970: TimeInterval(try value(.getCurrentTime).u32be(0)))
@@ -152,14 +150,6 @@ public final class Watch {
             r = try request(.findNextFile)
         }
         return files.sorted { $0.id < $1.id }
-    }
-
-    public func exists(_ id: UInt32) -> Bool {
-        do {
-            try fileOp(.openFileRead, id, name: "open")
-            try? fileOp(.closeFile, id, name: "close")
-            return true
-        } catch { return false }
     }
 
     public func readFile(_ id: UInt32) throws -> [UInt8] {
