@@ -10,6 +10,8 @@ MySports is gone. When you plug in the watch, it:
 - copies GPX files and starred Strava routes to the watch (Runner 3, Spark 3, Adventurer)
 - clears the watch after a verified export (optional)
 
+<img src="docs/images/menu.png" width="360" alt="The TomTomSync menu: watch connected, last sync, recent activities with their Strava upload status">
+
 Works with the Spark, Spark 3, Runner 2/3 and Adventurer. Tested on a Spark Music
 (activities, QuickFix, time zone) and a Runner 3 (routes).
 First-generation Multi-Sport/Runner watches should work but are untested.
@@ -40,6 +42,9 @@ Requires macOS 14 or newer.
 - Files are saved in `~/TomTom/fit` (`.fit`) and `~/TomTom/ttbin` (the watch's original files).
 - **Settings…** turns each step on or off. All are on by default, including clearing
   the watch after a verified export; only [routes](#routes) are off until you turn them on.
+  <details><summary>Screenshot of the settings</summary>
+  <img src="docs/images/settings.png" width="460" alt="The settings window: sync steps, routes, Strava and feedback">
+  </details>
 - A second-hand watch may still hold the previous owner's activities. They are saved
   and uploaded like your own, so turn off Strava upload for its first sync.
 

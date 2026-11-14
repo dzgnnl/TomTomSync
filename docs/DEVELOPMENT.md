@@ -54,7 +54,9 @@ are what actually protect the token. Set up (Settings → Environments):
   add the branch rule `main` and nothing else.
 - `TAP_TOKEN` as an **environment secret** of `release`, with no
   repository-level copy (repository secrets are readable from any branch).
-- Optional: a required reviewer for an extra approval step.
+- Optional: a required reviewer for an extra approval step. With one, a release
+  run waits twice for **Review deployments**: once to publish the release and
+  once to update the cask.
 
 [`release.yml`](../.github/workflows/release.yml) publishes the GitHub release
 and writes the cask (`packaging/homebrew/tomtomsync.rb.in`, via
