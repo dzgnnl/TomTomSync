@@ -65,8 +65,6 @@ public struct StravaCredentials: Codable, Sendable {
         try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: Self.url.path)
     }
 
-    public static func delete() { try? FileManager.default.removeItem(at: url) }
-
     public var isLoggedIn: Bool { refreshToken != nil }
 }
 
