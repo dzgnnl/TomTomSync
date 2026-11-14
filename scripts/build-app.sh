@@ -12,6 +12,10 @@
 #              choose another folder.
 #   --zip      also create build/TomTomSync-<version>.zip for sharing
 #
+# OFFICIAL_BUILD=1 marks the app as one of this project's own releases, the
+# only builds that send usage statistics. The release workflow sets it; leave
+# it unset for your own builds and forks.
+#
 # Signing: by default the app is signed ad hoc, which is fine on the Mac that
 # built it. For distribution set SIGN_IDENTITY to a "Developer ID Application"
 # certificate and NOTARY_PROFILE to a `xcrun notarytool store-credentials`
@@ -42,6 +46,7 @@ BIN=$(swift build -c release $ARCHS --show-bin-path)
 VERSION=$(git describe --tags --always 2>/dev/null || echo dev)
 SHORT_VERSION=$(git describe --tags --abbrev=0 2>/dev/null | sed 's/^v//' || true)
 [ -n "$SHORT_VERSION" ] || SHORT_VERSION=0.1
+if [ "${OFFICIAL_BUILD:-}" = 1 ]; then OFFICIAL="<true/>"; else OFFICIAL="<false/>"; fi
 
 APP=build/TomTomSync.app
 rm -rf "$APP"
@@ -67,6 +72,7 @@ cat > "$APP/Contents/Info.plist" <<EOF
     <key>CFBundleVersion</key><string>$VERSION</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>LSUIElement</key><true/>
+    <key>TTSOfficialBuild</key>$OFFICIAL
     <key>NSHumanReadableCopyright</key><string>© Tako Bruinsma. MIT License.</string>
 </dict>
 </plist>

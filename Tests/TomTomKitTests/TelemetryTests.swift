@@ -31,6 +31,16 @@ import Testing
         #expect(e2["TomTomSync.watchProductID"] == nil && e2["isTestMode"] as? String == "true")
     }
 
+    @Test func onlyOfficialReleasesSendLiveSignals() {
+        #expect(Telemetry.mode(build: "v0.2.0", official: true, testSignals: false) == .live)
+        // A fork's release, or a local build at a tag: nothing.
+        #expect(Telemetry.mode(build: "v0.2.0", official: false, testSignals: false) == .off)
+        #expect(Telemetry.mode(build: "v0.1.0-3-gabc123", official: true, testSignals: false) == .off)
+        // The development switch only ever gives test signals.
+        #expect(Telemetry.mode(build: "v0.2.0", official: false, testSignals: true) == .test)
+        #expect(Telemetry.mode(build: "dev", official: false, testSignals: true) == .test)
+    }
+
     @Test func onlyExactReleaseTagsCountAsRealUse() {
         #expect(Telemetry.isRelease(build: "v0.2.0"))
         #expect(Telemetry.isRelease(build: "v1.10"))

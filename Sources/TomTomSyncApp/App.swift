@@ -302,7 +302,7 @@ struct SettingsView: View {
                 Toggle("Set watch time zone to this Mac's", isOn: $model.timeSync)
                 Toggle("Launch at login", isOn: Binding(get: { model.launchAtLogin }, set: { model.launchAtLogin = $0 }))
                 Toggle("Check for updates", isOn: $model.checkForUpdates)
-                if Telemetry.isConfigured {
+                if AppModel.usageMode != .off {
                     Toggle("Send anonymous usage statistics", isOn: $model.shareUsage)
                     Text("Once a day, to TelemetryDeck: app version, macOS version, watch model, whether Strava is connected and a random installation ID. Nothing about activities, locations or accounts. It shows whether the app is still used.")
                         .font(.caption).foregroundStyle(.secondary)

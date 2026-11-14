@@ -107,7 +107,7 @@ signal contains:
 It contains nothing about your activities, locations, name, accounts or watch serial
 number. Nothing is sent before the first-launch notice, which has a **Turn Off**
 button; later, use **Settings… → Send anonymous usage statistics**. `ttsync` sends
-nothing. The statistics are only used to count installations; questions can go to
+nothing, and neither does a copy you build yourself or a fork's release. The statistics are only used to count installations; questions can go to
 [Tako Bruinsma](https://github.com/dzgnnl) via an issue. The code is in
 [`Telemetry.swift`](Sources/TomTomKit/Sync/Telemetry.swift).
 
