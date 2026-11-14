@@ -65,6 +65,14 @@ The secret `TAP_TOKEN` is a fine-grained token with **Contents: read and write**
 on `homebrew-tap` only, and it expires yearly. If the cask step fails, renew the
 token and re-run the job; re-running is safe.
 
+**Usage statistics:** only releases built by this repository's workflow send the
+daily signal. The workflow sets `OFFICIAL_BUILD=1`, which `build-app.sh` writes to
+Info.plist as `TTSOfficialBuild`; every other build (a local one, a fork's release)
+sends nothing and hides the setting. To test the signal from a local build:
+`defaults write nl.dzgn.TomTomSync usageTestSignals -bool true`, which sends in
+TelemetryDeck's test mode. A fork that wants its own statistics changes the app ID
+in [`Telemetry.swift`](../Sources/TomTomKit/Sync/Telemetry.swift).
+
 **Signing:** releases are signed ad hoc. The cask removes the quarantine flag, so
 Homebrew users get no Gatekeeper warning; users who download the ZIP directly
 click *Open Anyway*. Developer ID signing is on the [roadmap](ROADMAP.md).

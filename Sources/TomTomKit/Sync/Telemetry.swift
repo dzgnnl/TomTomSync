@@ -11,11 +11,29 @@ public enum Telemetry {
 
     public static var isConfigured: Bool { !appID.isEmpty && !namespace.isEmpty }
 
-    /// Only release builds count as real use. The release workflow builds from a
-    /// tag, so `CFBundleVersion` is exactly "v1.2.3"; anything else (git
-    /// describe output, a commit hash, "dev") is test data.
+    /// The release workflow builds from a tag, so `CFBundleVersion` is exactly
+    /// "v1.2.3"; anything else (git describe output, a commit hash, "dev") isn't
+    /// a release.
     public static func isRelease(build: String) -> Bool {
         build.range(of: #"^v\d+(\.\d+)*$"#, options: .regularExpression) != nil
+    }
+
+    public enum Mode: Sendable { case off, test, live }
+
+    /// Info.plist key set by `build-app.sh` for builds made by this repository's
+    /// release workflow.
+    public static let officialBuildKey = "TTSOfficialBuild"
+    /// Preference that makes any other build send test signals, for development:
+    /// `defaults write nl.dzgn.TomTomSync usageTestSignals -bool true`.
+    public static let testSignalsKey = "usageTestSignals"
+
+    /// Only this project's own releases count as real use. Other builds (a
+    /// local build, a fork's release) send nothing, so they don't inflate the
+    /// numbers and their users aren't reporting to this project.
+    public static func mode(build: String, official: Bool, testSignals: Bool) -> Mode {
+        guard isConfigured else { return .off }
+        if official && isRelease(build: build) { return .live }
+        return testSignals ? .test : .off
     }
 
     /// What the daily signal contains. Nothing about activities, locations,

@@ -261,10 +261,19 @@ final class AppModel {
 
     // MARK: Usage statistics
 
+    /// Live for this project's releases, off for every other build.
+    static var usageMode: Telemetry.Mode {
+        let b = Bundle.main
+        return Telemetry.mode(
+            build: b.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "",
+            official: b.object(forInfoDictionaryKey: Telemetry.officialBuildKey) as? Bool ?? false,
+            testSignals: UserDefaults.standard.bool(forKey: Telemetry.testSignalsKey))
+    }
+
     /// Explains the daily signal once, then sends it at most once a day while
     /// `shareUsage` is on. Nothing is sent before the notice has been shown.
     private func startTelemetry() {
-        guard Telemetry.isConfigured, Bundle.main.bundleIdentifier != nil else { return }
+        guard Self.usageMode != .off, Bundle.main.bundleIdentifier != nil else { return }
         telemetryTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(5))
             self?.showUsageNoticeOnce()
@@ -297,7 +306,8 @@ final class AppModel {
 
     private func sendUsageIfDue() async {
         let d = UserDefaults.standard
-        guard shareUsage, d.bool(forKey: "usageNoticeShown") else { return }
+        let mode = Self.usageMode
+        guard mode != .off, shareUsage, d.bool(forKey: "usageNoticeShown") else { return }
         let today = Calendar.current.startOfDay(for: Date())
         if let last = d.object(forKey: "usageSentDay") as? Date, last >= today { return }
         let installID = d.string(forKey: "installID") ?? {
@@ -309,9 +319,8 @@ final class AppModel {
             macOSVersion: "\(os.majorVersion).\(os.minorVersion)",
             watchProductID: d.string(forKey: "lastWatchProductID"),
             stravaConnected: strava?.isLoggedIn ?? false)
-        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
         do {
-            try await Telemetry.send(info, installID: installID, testMode: !Telemetry.isRelease(build: build))
+            try await Telemetry.send(info, installID: installID, testMode: mode == .test)
             d.set(today, forKey: "usageSentDay")
         } catch {
             // Try again in an hour; never bother the user about it.
