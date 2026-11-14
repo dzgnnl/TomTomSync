@@ -153,7 +153,8 @@ public enum Exporter {
 // MARK: - GPS QuickFix
 
 public enum QuickFix {
-    /// TomTom still serves ephemeris data here; `days` must be 3, 7 or 14.
+    /// TomTom still serves ephemeris data here; `days` must be 3 or 7
+    /// (the 14-day file MySports could use is gone).
     public static func url(days: Int) -> URL {
         URL(string: "https://gpsquickfix.services.tomtom.com/fitness/sifgps.f2p\(days)enc.ee")!
     }
