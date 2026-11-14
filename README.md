@@ -39,7 +39,7 @@ Requires macOS 14 or newer.
   their Strava upload status. Click the status line for the log.
 - Files are saved in `~/TomTom/fit` (`.fit`) and `~/TomTom/ttbin` (the watch's original files).
 - **Settings…** turns each step on or off. All are on by default, including clearing
-  the watch after a verified export.
+  the watch after a verified export; only [routes](#routes) are off until you turn them on.
 - A second-hand watch may still hold the previous owner's activities. They are saved
   and uploaded like your own, so turn off Strava upload for its first sync.
 
