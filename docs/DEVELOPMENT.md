@@ -22,7 +22,7 @@ the Command Line Tools. `--zip` creates `build/TomTomSync-<version>.zip`.
 |---|---|
 | `ttsync info` | Model, firmware, clock, time zone, file counts |
 | `ttsync export [--delete] [--out DIR]` | Save activities as `.ttbin` + `.fit`; `--delete` removes each one after its saved copy is read back |
-| `ttsync quickfix [--days 3\|7\|14]` | Update GPS QuickFix |
+| `ttsync quickfix [--days 3\|7]` | Update GPS QuickFix |
 | `ttsync timesync` | Set the watch's UTC offset to the Mac's |
 | `ttsync sync [--delete]` | Export, QuickFix, time zone and routes, then Strava upload |
 | `ttsync strava login --client-id ID [--client-secret SECRET]` | Connect to Strava |
@@ -106,6 +106,7 @@ The watches are USB HID devices with vendor ID `0x1390`. TomTomSync uses
 |---|---|---|
 | `0x7474` | Multi-Sport, Runner, Multi-Sport Cardio | 64 / 50 / 54 |
 | `0x7475` | Spark, Spark Music, Runner 2/3 (Music), Adventurer | 256 / 242 / 246 |
+| `0x7476` | Runner 3 / Spark 3 Cardio + Music (one report, untested) | 256 / 242 / 246 |
 | `0x7477` | Spark Cardio, Runner 2/3 Cardio | 256 / 242 / 246 |
 
 Packets are `[0x09, len+2, counter, msg, payload…]`; the reply starts with `0x01`
@@ -127,7 +128,7 @@ File-operation errors are at payload offset 16. Startup sequence:
 | File | Contents |
 |---|---|
 | `0x0091xxxx` | Activities (ttbin) |
-| `0x00010100` | GPS QuickFix: download `https://gpsquickfix.services.tomtom.com/fitness/sifgps.f2p{3,7,14}enc.ee`, write it, verify it, then send `1d` |
+| `0x00010100` | GPS QuickFix: download `https://gpsquickfix.services.tomtom.com/fitness/sifgps.f2p{3,7}enc.ee` (the 14-day file is gone), write it, verify it, then send `1d` |
 | `0x00850000` | Settings, little-endian: `u16 type, u16 count, {u16 index, u32 value}…`; index 169 = UTC offset in seconds |
 | `0x00B80000`–`0x00B8000E` | Routes ("trails"), one per file; see [Routes](#routes) |
 

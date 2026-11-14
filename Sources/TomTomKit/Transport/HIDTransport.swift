@@ -26,6 +26,7 @@ public enum TransportError: Error, CustomStringConvertible {
 public enum WatchModel: Int, Sendable {
     case multisport = 0x7474   // Runner / Multi-Sport (1st gen)
     case sparkMusic = 0x7475   // Spark Music / Runner 2/3 Music / Adventurer
+    case sparkCardioMusic = 0x7476  // Runner 3 / Spark 3 Cardio + Music (one report, untested)
     case sparkCardio = 0x7477  // Spark Cardio / Runner 2/3 Cardio
 
     public static let vendorID = 0x1390
@@ -34,6 +35,7 @@ public enum WatchModel: Int, Sendable {
         switch self {
         case .multisport: return "Runner / Multi-Sport"
         case .sparkMusic: return "Spark Music / Runner Music / Adventurer"
+        case .sparkCardioMusic: return "Spark Cardio + Music / Runner Cardio + Music"
         case .sparkCardio: return "Spark Cardio / Runner Cardio"
         }
     }

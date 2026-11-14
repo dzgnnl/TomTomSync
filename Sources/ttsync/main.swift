@@ -10,7 +10,7 @@ USAGE:
   ttsync export [--delete] [--out DIR]
                                    Download activities as .ttbin + .fit (default DIR: ~/TomTom)
                                    --delete removes them from the watch after a verified save
-  ttsync quickfix [--days 3|7|14]  Download GPS QuickFix data and upload it to the watch
+  ttsync quickfix [--days 3|7]     Download GPS QuickFix data and upload it to the watch
   ttsync timesync                  Set the watch's time zone offset to this Mac's
   ttsync sync [--delete]           export + quickfix + timesync + routes (+ Strava upload when logged in)
   ttsync strava login --client-id ID [--client-secret SECRET]
@@ -95,7 +95,7 @@ func readSecret(prompt: String) throws -> String {
 
     case "quickfix":
         let days = Int(option("--days") ?? "7") ?? 7
-        guard [3, 7, 14].contains(days) else { throw WatchError.badResponse("--days must be 3, 7 or 14") }
+        guard [3, 7].contains(days) else { throw WatchError.badResponse("--days must be 3 or 7") }
         print("Downloading QuickFix data (\(days) days)…")
         let data = try await QuickFix.download(days: days)
         let w = try connect(); withProgress(w)
