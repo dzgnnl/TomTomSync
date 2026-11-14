@@ -39,13 +39,14 @@ Requires macOS 14 or newer.
   their Strava upload status. Click the status line for the log.
 - Files are saved in `~/TomTom/fit` (`.fit`) and `~/TomTom/ttbin` (the watch's original files).
 - **Settings…** turns each step on or off. All are on by default, including clearing
-  the watch after a verified export.
+  the watch after a verified export; only [routes](#routes) are off until you turn them on.
 - A second-hand watch may still hold the previous owner's activities. They are saved
   and uploaded like your own, so turn off Strava upload for its first sync.
 
 ## Routes
 
 Runner 3, Spark 3 and Adventurer can show a route during a run, ride or other GPS activity.
+Route sync is off by default: turn on **Sync routes to the watch** in 🏃 → **Settings… → Routes**.
 On the watch, open the activity's **Settings → Trails**.
 
 - Put GPX files in `~/TomTom/routes` (🏃 → **Settings…** → **Open Routes Folder**).
@@ -81,7 +82,8 @@ under 10 m, are not uploaded automatically; use the **Upload** button next to th
   Allow accessories to connect**.
 - **"Apple could not verify…"** (only for a ZIP downloaded from Releases):
   **System Settings → Privacy & Security → Open Anyway**.
-- **Routes don't appear:** only Runner 3, Spark 3 and Adventurer have Trails. Click the
+- **Routes don't appear:** only Runner 3, Spark 3 and Adventurer have Trails, and route
+  sync has to be turned on in **Settings… → Routes**. Click the
   status line for the log: a GPX file that can't be read stops the route sync until it
   is fixed or removed.
 - **Strava errors:** **Settings… → Disconnect Strava**, then connect again.

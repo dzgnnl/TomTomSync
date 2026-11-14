@@ -21,6 +21,8 @@
   says when a new version is available. `build-app.sh` already
   supports signing ([details](DEVELOPMENT.md#releases)).
 - **Test more watches**, especially the first generation (`0x7474`) and Spark Cardio (`0x7477`).
+- **Turn route sync on automatically** for watches that support it, once there is a
+  complete list of product IDs with a Trails menu. Until then it is off by default.
 - **Test routes further**: following a route on a run, GPX files over 500 points,
   long names, several track segments.
 - **Relaunch after `brew upgrade`**: upgrading quits the app.

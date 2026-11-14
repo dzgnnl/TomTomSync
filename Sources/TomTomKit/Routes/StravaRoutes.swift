@@ -113,6 +113,8 @@ public enum StravaRouteSync {
 }
 
 /// Route settings, stored in the app's preferences so the CLI uses the same ones.
+/// Route sync is off until the user turns it on: a watch without Trails accepts
+/// route files without an error, so the app can't tell that it has no use for them.
 public struct RouteSettings: Sendable {
     public var enabled: Bool
     public var stravaKinds: Set<StravaRoute.Kind>
@@ -127,7 +129,7 @@ public struct RouteSettings: Sendable {
 
     public static func load(_ d: UserDefaults? = defaults) -> RouteSettings {
         let kinds = (d?.stringArray(forKey: kindsKey) ?? ["run"]).compactMap(StravaRoute.Kind.init(rawValue:))
-        return RouteSettings(enabled: d?.object(forKey: enabledKey) as? Bool ?? true, stravaKinds: Set(kinds))
+        return RouteSettings(enabled: d?.object(forKey: enabledKey) as? Bool ?? false, stravaKinds: Set(kinds))
     }
 
     public func save(_ d: UserDefaults? = defaults) {

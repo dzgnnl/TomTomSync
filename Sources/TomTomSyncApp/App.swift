@@ -312,7 +312,7 @@ struct SettingsView: View {
             }
             Section("Routes") {
                 Toggle("Sync routes to the watch", isOn: $model.routeSettings.enabled)
-                Text("GPX files in ~/TomTom/routes go to the watch, up to 15, under Settings → Trails of a GPS activity. Needs a Runner 3, Spark 3 or Adventurer.")
+                Text("GPX files in ~/TomTom/routes go to the watch, up to 15, under Settings → Trails of a GPS activity. Only turn this on for a Runner 3, Spark 3 or Adventurer; other watches can't show routes.")
                     .font(.caption).foregroundStyle(.secondary)
                 if let c = model.strava, c.isLoggedIn {
                     LabeledContent("Starred Strava routes") {
