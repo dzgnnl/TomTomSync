@@ -74,6 +74,9 @@ import Testing
         #expect(d.watchConnected)
         d.unplugged("watch")
         #expect(!d.watchConnected && d.unsupportedProductID == nil)
+    }
+}
+
 @Suite struct WatchLockTests {
     @Test func oneConnectionAtATime() throws {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("ttsync-\(UUID().uuidString)/watch.lock")
