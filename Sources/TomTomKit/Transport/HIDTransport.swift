@@ -183,7 +183,8 @@ public final class HIDTransport: WatchTransport, @unchecked Sendable {
     }
 
     public func close() {
-        usbLock.release()
+        // Last, so the next process only gets in once this one has let go of the device.
+        defer { usbLock.release() }
         guard let rl = runLoop else { return }
         IOHIDDeviceUnscheduleFromRunLoop(device, rl, CFRunLoopMode.defaultMode.rawValue)
         IOHIDDeviceClose(device, IOOptionBits(kIOHIDOptionsTypeNone))
