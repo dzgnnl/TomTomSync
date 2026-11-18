@@ -4,6 +4,7 @@ import IOKit.hid
 
 public enum TransportError: Error, CustomStringConvertible {
     case noDevice
+    case unsupportedDevice(Int)
     case openFailed(IOReturn)
     case sendFailed(IOReturn)
     case timeout
@@ -13,6 +14,8 @@ public enum TransportError: Error, CustomStringConvertible {
     public var description: String {
         switch self {
         case .noDevice: return "No TomTom watch found. Is it connected via USB?"
+        case .unsupportedDevice(let id):
+            return String(format: "This TomTom device is not supported (USB product ID 0x%04X)", id)
         case .openFailed(let r): return "Could not open watch (IOReturn \(String(format: "0x%08x", r)))"
         case .sendFailed(let r): return "USB send failed (IOReturn \(String(format: "0x%08x", r)))"
         case .timeout: return "Timeout waiting for the watch to respond"
@@ -44,6 +47,21 @@ public enum WatchModel: Int, Sendable {
     var readChunk: Int { self == .multisport ? 50 : 242 }
     var writeChunk: Int { self == .multisport ? 54 : 246 }
     var packetSize: Int { self == .multisport ? 64 : 256 }
+}
+
+/// The TomTom USB devices that are plugged in. TomTom's vendor ID is also on
+/// devices that are not sports watches, and on watches this app doesn't know.
+public struct PluggedDevices<Device: Hashable> {
+    private var productIDs: [Device: Int] = [:]
+
+    public init() {}
+
+    public mutating func plugged(_ device: Device, productID: Int) { productIDs[device] = productID }
+    public mutating func unplugged(_ device: Device) { productIDs[device] = nil }
+
+    public var watchConnected: Bool { productIDs.values.contains { WatchModel(rawValue: $0) != nil } }
+    /// The product ID of a device that is not a known watch, when no watch is connected.
+    public var unsupportedProductID: Int? { watchConnected ? nil : productIDs.values.min() }
 }
 
 /// What `Watch` needs from a connection. `HIDTransport` is the real one; tests
@@ -81,19 +99,29 @@ public final class HIDTransport: WatchTransport, @unchecked Sendable {
     private let outputReportSize: Int
     private var runLoop: CFRunLoop?
 
-    public static func findWatch() -> (IOHIDDevice, WatchModel)? {
+    /// TomTom USB devices that are plugged in, with their product IDs.
+    private static func tomTomDevices() -> [(IOHIDDevice, Int)] {
         let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
         IOHIDManagerSetDeviceMatching(manager, [kIOHIDVendorIDKey: WatchModel.vendorID] as CFDictionary)
-        guard let set = IOHIDManagerCopyDevices(manager) as? Set<IOHIDDevice> else { return nil }
-        for dev in set {
-            let pid = IOHIDDeviceGetProperty(dev, kIOHIDProductIDKey as CFString) as? Int ?? 0
+        guard let set = IOHIDManagerCopyDevices(manager) as? Set<IOHIDDevice> else { return [] }
+        return set.map { ($0, IOHIDDeviceGetProperty($0, kIOHIDProductIDKey as CFString) as? Int ?? 0) }
+    }
+
+    public static func findWatch() -> (IOHIDDevice, WatchModel)? {
+        for (dev, pid) in tomTomDevices() {
             if let model = WatchModel(rawValue: pid) { return (dev, model) }
         }
         return nil
     }
 
+    /// Why `findWatch()` found nothing: no TomTom device at all, or one that
+    /// is not a watch this app knows.
+    public static func noWatchError() -> TransportError {
+        tomTomDevices().map(\.1).min().map(TransportError.unsupportedDevice) ?? .noDevice
+    }
+
     public init() throws {
-        guard let (dev, model) = HIDTransport.findWatch() else { throw TransportError.noDevice }
+        guard let (dev, model) = HIDTransport.findWatch() else { throw Self.noWatchError() }
         self.device = dev
         self.model = model
         self.serialNumber = IOHIDDeviceGetProperty(dev, kIOHIDSerialNumberKey as CFString) as? String
