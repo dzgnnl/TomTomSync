@@ -5,6 +5,7 @@ import IOKit.hid
 public enum TransportError: Error, CustomStringConvertible {
     case noDevice
     case unsupportedDevice(Int)
+    case busy
     case openFailed(IOReturn)
     case sendFailed(IOReturn)
     case timeout
@@ -16,6 +17,7 @@ public enum TransportError: Error, CustomStringConvertible {
         case .noDevice: return "No TomTom watch found. Is it connected via USB?"
         case .unsupportedDevice(let id):
             return String(format: "This TomTom device is not supported (USB product ID 0x%04X)", id)
+        case .busy: return "The watch is in use by TomTomSync or ttsync. Try again when that sync has finished."
         case .openFailed(let r): return "Could not open watch (IOReturn \(String(format: "0x%08x", r)))"
         case .sendFailed(let r): return "USB send failed (IOReturn \(String(format: "0x%08x", r)))"
         case .timeout: return "Timeout waiting for the watch to respond"
@@ -76,6 +78,36 @@ public protocol WatchTransport: AnyObject {
     func close()
 }
 
+/// Lets one process at a time talk to the watch. macOS allows several to open
+/// the device, but replies are matched to requests by a one-byte counter, so
+/// two talkers would read each other's answers.
+final class WatchLock {
+    static let defaultURL = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Library/Application Support/TomTomSync/watch.lock")
+
+    private var fd: Int32
+
+    /// Throws `TransportError.busy` when another connection holds the lock.
+    init(url: URL = WatchLock.defaultURL) throws {
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        fd = open(url.path, O_CREAT | O_RDWR | O_CLOEXEC, 0o600)
+        // A lock file that can't be created must not stop the sync.
+        guard fd >= 0 else { return }
+        if flock(fd, LOCK_EX | LOCK_NB) != 0, errno == EWOULDBLOCK {
+            Darwin.close(fd)
+            fd = -1
+            throw TransportError.busy
+        }
+    }
+
+    /// The lock also goes when the process exits or crashes.
+    func release() {
+        if fd >= 0 { Darwin.close(fd); fd = -1 }
+    }
+
+    deinit { release() }
+}
+
 /// Talks to the watch through the IOKit HID API.
 ///
 /// The watch is a vendor-defined HID device. Using IOHIDDevice (instead of
@@ -91,6 +123,7 @@ public final class HIDTransport: WatchTransport, @unchecked Sendable {
     public let serialNumber: String?
 
     private let device: IOHIDDevice
+    private let usbLock: WatchLock
     private let lock = NSCondition()
     private var inbox: [[UInt8]] = []
     private var isRemoved = false
@@ -122,6 +155,7 @@ public final class HIDTransport: WatchTransport, @unchecked Sendable {
 
     public init() throws {
         guard let (dev, model) = HIDTransport.findWatch() else { throw Self.noWatchError() }
+        self.usbLock = try WatchLock()
         self.device = dev
         self.model = model
         self.serialNumber = IOHIDDeviceGetProperty(dev, kIOHIDSerialNumberKey as CFString) as? String
@@ -149,6 +183,7 @@ public final class HIDTransport: WatchTransport, @unchecked Sendable {
     }
 
     public func close() {
+        usbLock.release()
         guard let rl = runLoop else { return }
         IOHIDDeviceUnscheduleFromRunLoop(device, rl, CFRunLoopMode.defaultMode.rawValue)
         IOHIDDeviceClose(device, IOOptionBits(kIOHIDOptionsTypeNone))
