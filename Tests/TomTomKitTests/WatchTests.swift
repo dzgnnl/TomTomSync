@@ -4,6 +4,11 @@ import Testing
 
 private let quiet = SyncLog { _ in }
 
+private final class Lines {
+    var all: [String] = []
+    var log: SyncLog { SyncLog { self.all.append($0) } }
+}
+
 private func tempRoot() throws -> URL {
     let url = FileManager.default.temporaryDirectory.appendingPathComponent("tomtomsync-watch-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
@@ -165,22 +170,64 @@ private func activityID(_ n: Int) -> UInt32 { FileID.ttbinType | UInt32(n) }
         let mac = TimeZone.current.secondsFromGMT()
         fake.files[FileID.manifest] = manifest(offset: mac + 3600)
         let w = Watch(transport: fake)
-        #expect(try TimeSync.sync(watch: w, log: quiet))
+        let backups = try tempRoot()
+        defer { try? FileManager.default.removeItem(at: backups) }
+        #expect(try TimeSync.sync(watch: w, backups: backups, log: quiet))
         #expect(fake.files[FileID.manifest] == manifest(offset: mac))
         #expect(fake.written == [FileID.manifest])
-        #expect(try !TimeSync.sync(watch: w, log: quiet))
+        #expect(try !TimeSync.sync(watch: w, backups: backups, log: quiet))
         #expect(fake.written == [FileID.manifest], "no second write")
+        // The settings from before the change are kept on the Mac.
+        #expect(try [UInt8](Data(contentsOf: backups.appendingPathComponent("settings-AB1234C56789.bin"))) == manifest(offset: mac + 3600))
     }
 
-    @Test func refusesASettingsFileItDoesNotUnderstand() {
+    @Test func putsTheSettingsBackWhenTheWriteFails() throws {
         let fake = FakeWatch()
+        let before = manifest(offset: TimeZone.current.secondsFromGMT() + 3600)
+        fake.files[FileID.manifest] = before
+        fake.corruptsNextWrite = true
+        let backups = try tempRoot()
+        defer { try? FileManager.default.removeItem(at: backups) }
+        let lines = Lines()
+        #expect(throws: WatchError.self) { try TimeSync.sync(watch: Watch(transport: fake), backups: backups, log: lines.log) }
+        #expect(fake.files[FileID.manifest] == before)
+        #expect(lines.all.contains { $0.contains("put back") })
+        #expect(!FileManager.default.fileExists(atPath: backups.appendingPathComponent("settings-AB1234C56789.pending").path))
+    }
+
+    @Test func restoresTheSettingsAtTheNextSyncAfterTheCableWasPulled() throws {
+        let fake = FakeWatch()
+        let mac = TimeZone.current.secondsFromGMT()
+        let before = manifest(offset: mac + 3600)
+        fake.files[FileID.manifest] = before
+        let backups = try tempRoot()
+        defer { try? FileManager.default.removeItem(at: backups) }
+
+        // Pulled halfway through the write: the watch is left with part of the file.
+        fake.requestsUntilDisconnect = 6
+        #expect(throws: TransportError.self) { try TimeSync.sync(watch: Watch(transport: fake), backups: backups, log: quiet) }
+        fake.files[FileID.manifest] = Array(before.prefix(9))
+        #expect(FileManager.default.fileExists(atPath: backups.appendingPathComponent("settings-AB1234C56789.pending").path))
+
+        fake.requestsUntilDisconnect = nil
+        let lines = Lines()
+        #expect(try TimeSync.sync(watch: Watch(transport: fake), backups: backups, log: lines.log))
+        #expect(lines.all.contains { $0.contains("restored") })
+        #expect(fake.files[FileID.manifest] == manifest(offset: mac), "restored, then updated")
+        #expect(!FileManager.default.fileExists(atPath: backups.appendingPathComponent("settings-AB1234C56789.pending").path))
+    }
+
+    @Test func refusesASettingsFileItDoesNotUnderstand() throws {
+        let fake = FakeWatch()
+        let backups = try tempRoot()
+        defer { try? FileManager.default.removeItem(at: backups) }
         fake.files[FileID.manifest] = [0x85, 0x00, 0x09, 0x00, 1, 2, 3]   // says 9 entries, holds none
-        #expect(throws: WatchError.self) { try TimeSync.sync(watch: Watch(transport: fake), log: quiet) }
+        #expect(throws: WatchError.self) { try TimeSync.sync(watch: Watch(transport: fake), backups: backups, log: quiet) }
         #expect(fake.written.isEmpty)
         // No utc_offset entry: nothing to set, so nothing is written.
         var d = [UInt8](); d.appendLE(UInt16(0x0085)); d.appendLE(UInt16(1)); d.appendLE(UInt16(1)); d.appendLE(UInt32(42))
         fake.files[FileID.manifest] = d
-        #expect(throws: WatchError.self) { try TimeSync.sync(watch: Watch(transport: fake), log: quiet) }
+        #expect(throws: WatchError.self) { try TimeSync.sync(watch: Watch(transport: fake), backups: backups, log: quiet) }
         #expect(fake.written.isEmpty)
     }
 }

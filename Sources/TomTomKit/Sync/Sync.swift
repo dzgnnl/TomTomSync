@@ -210,10 +210,58 @@ public enum TimeSync {
                        clockDrift: watchUTC.timeIntervalSince(now)), settings)
     }
 
+    /// Where a copy of the watch settings file is kept while it is rewritten,
+    /// and afterwards as the last known good version.
+    public static let backupFolder = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Library/Application Support/TomTomSync")
+
+    /// `settings-<serial>.pending` while a write is under way, `.bin` once it is done.
+    static func backupURL(for watch: Watch, in folder: URL, pending: Bool) -> URL {
+        // The serial comes from the device, so only letters and digits reach the file name.
+        let serial = String((watch.transport.serialNumber ?? "").filter { $0.isASCII && ($0.isLetter || $0.isNumber) }.prefix(32))
+        return folder.appendingPathComponent("settings-\(serial.isEmpty ? "watch" : serial).\(pending ? "pending" : "bin")")
+    }
+
+    private static func finishBackup(for watch: Watch, in folder: URL) {
+        let pending = backupURL(for: watch, in: folder, pending: true), done = backupURL(for: watch, in: folder, pending: false)
+        try? FileManager.default.removeItem(at: done)
+        try? FileManager.default.moveItem(at: pending, to: done)
+    }
+
+    /// A settings write that was cut off (cable pulled) leaves its backup
+    /// behind. If the watch no longer holds a usable settings file, the backup
+    /// is written back.
+    static func restoreIfInterrupted(watch: Watch, backups: URL, log: SyncLog) throws {
+        let pending = backupURL(for: watch, in: backups, pending: true)
+        guard let saved = try? Data(contentsOf: pending) else { return }
+        let original = [UInt8](saved)
+        guard (try? WatchSettings(data: original))?.utcOffset != nil else {
+            try? FileManager.default.removeItem(at: pending)   // not a backup we can trust
+            return
+        }
+        do {
+            guard try WatchSettings(data: watch.readFile(FileID.manifest)).utcOffset == nil else {
+                finishBackup(for: watch, in: backups)   // the watch has a complete settings file
+                return
+            }
+        } catch let e as TransportError {
+            throw e   // the watch is gone again; try at the next connection
+        } catch {
+            // Missing or damaged on the watch: restore below.
+        }
+        try watch.writeVerified(FileID.manifest, original)
+        finishBackup(for: watch, in: backups)
+        log("Watch settings restored after an interrupted time zone update")
+    }
+
     /// Writes the Mac's current UTC offset to the watch if it differs.
     /// The watch's UTC clock itself comes from GPS and is not changed.
+    ///
+    /// The settings file is rewritten as a whole, so the original is saved on
+    /// the Mac first and written back if the update fails.
     @discardableResult
-    public static func sync(watch: Watch, log: SyncLog) throws -> Bool {
+    public static func sync(watch: Watch, backups: URL = backupFolder, log: SyncLog) throws -> Bool {
+        try restoreIfInterrupted(watch: watch, backups: backups, log: log)
         var (st, settings) = try status(watch: watch)
         if abs(st.clockDrift) > 300 {
             log("Watch clock is \(Int(st.clockDrift))s off UTC; record an activity outdoors to sync it from GPS")
@@ -222,8 +270,22 @@ public enum TimeSync {
             log("Time zone offset already correct (\(formatOffset(st.watchOffset)))")
             return false
         }
+        let original = settings.data
+        try FileManager.default.createDirectory(at: backups, withIntermediateDirectories: true)
+        try Data(original).write(to: backupURL(for: watch, in: backups, pending: true), options: .atomic)
         _ = settings.setUTCOffset(st.desiredOffset)
-        try watch.writeVerified(FileID.manifest, settings.data)
+        do {
+            try watch.writeVerified(FileID.manifest, settings.data)
+        } catch {
+            // Put the original back if the watch is still there; otherwise the
+            // backup stays and the next sync restores it.
+            if (try? watch.writeVerified(FileID.manifest, original)) != nil {
+                finishBackup(for: watch, in: backups)
+                log("Time zone update failed; the watch settings were put back")
+            }
+            throw error
+        }
+        finishBackup(for: watch, in: backups)
         log("Time zone offset updated \(formatOffset(st.watchOffset)) → \(formatOffset(st.desiredOffset))")
         return true
     }
