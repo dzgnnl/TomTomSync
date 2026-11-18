@@ -82,15 +82,17 @@ public protocol WatchTransport: AnyObject {
 /// the device, but replies are matched to requests by a one-byte counter, so
 /// two talkers would read each other's answers.
 final class WatchLock {
-    static let defaultURL = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Library/Application Support/TomTomSync/watch.lock")
+    /// One file for the whole Mac: the watch is shared by every logged-in account.
+    static let defaultURL = URL(fileURLWithPath: "/tmp/nl.dzgn.TomTomSync.watch.lock")
 
     private var fd: Int32
 
     /// Throws `TransportError.busy` when another connection holds the lock.
     init(url: URL = WatchLock.defaultURL) throws {
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        fd = open(url.path, O_CREAT | O_RDWR | O_CLOEXEC, 0o600)
+        // Nothing is ever written to the file; other accounts must be able to open it.
+        fd = open(url.path, O_CREAT | O_RDWR | O_CLOEXEC | O_NOFOLLOW, 0o666)
+        if fd >= 0 { fchmod(fd, 0o666) }   // not narrowed by the umask
         // Where locking itself doesn't work (the file can't be created, or the
         // home folder is on a volume without flock), syncing goes on without
         // it: never being able to sync is worse than the rare collision.
