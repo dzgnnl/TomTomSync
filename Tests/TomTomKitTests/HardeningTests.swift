@@ -57,3 +57,22 @@ import Testing
         for bad in ["", "..", "../x.gpx", ".index.json", "a/b.gpx"] { #expect(!StravaRouteSync.isPlainFileName(bad)) }
     }
 }
+
+@Suite struct PluggedDevicesTests {
+    @Test func onlyKnownWatchesCountAsConnected() {
+        var d = PluggedDevices<String>()
+        #expect(!d.watchConnected && d.unsupportedProductID == nil)
+
+        d.plugged("band", productID: 0x7480)   // a TomTom Touch: same vendor, not a watch we know
+        #expect(!d.watchConnected && d.unsupportedProductID == 0x7480)
+
+        d.plugged("watch", productID: 0x7475)
+        #expect(d.watchConnected && d.unsupportedProductID == nil)
+
+        // Unplugging the other device doesn't disconnect the watch.
+        d.unplugged("band")
+        #expect(d.watchConnected)
+        d.unplugged("watch")
+        #expect(!d.watchConnected && d.unsupportedProductID == nil)
+    }
+}

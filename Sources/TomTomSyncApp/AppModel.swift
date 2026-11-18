@@ -67,8 +67,8 @@ final class AppModel {
         if Bundle.main.bundleIdentifier != nil {
             UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
         }
-        monitor = WatchMonitor { [weak self] connected in
-            Task { @MainActor in self?.watchChanged(connected) }
+        monitor = WatchMonitor { [weak self] connected, unsupported in
+            Task { @MainActor in self?.watchChanged(connected, unsupportedProductID: unsupported) }
         }
         if checkForUpdates { startUpdateChecks() }
         startTelemetry()
@@ -99,8 +99,15 @@ final class AppModel {
 
     // MARK: Watch
 
-    private func watchChanged(_ connected: Bool) {
-        guard connected != watchConnected else { return }
+    private func watchChanged(_ connected: Bool, unsupportedProductID: Int?) {
+        let idle = unsupportedProductID.map {
+            String(format: "Unsupported TomTom device (USB ID 0x%04X). A sports watch? Tell us via Settings… → Send Feedback.", $0)
+        } ?? "Waiting for watch"
+        guard connected != watchConnected else {
+            // Only a device that isn't a watch came or went.
+            if !connected, phase != .syncing { statusLine = idle }
+            return
+        }
         watchConnected = connected
         pendingSync?.cancel()
         if connected {
@@ -114,7 +121,7 @@ final class AppModel {
                 }
             }
         } else if phase != .syncing {
-            statusLine = "Waiting for watch"
+            statusLine = idle
         }
     }
 

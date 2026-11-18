@@ -108,7 +108,7 @@ func readSecret(prompt: String) throws -> String {
         var o = SyncOptions()
         o.deleteAfterExport = flag("--delete")
         o.stravaUpload = StravaCredentials.load()?.isLoggedIn ?? false
-        guard Watch.isConnected else { throw TransportError.noDevice }
+        guard Watch.isConnected else { throw HIDTransport.noWatchError() }
         let s = try await SyncRunner.run(o, log: log)
         print("Done: \(s.exported.count) exported, \(s.uploaded.count) uploaded to Strava")
 
