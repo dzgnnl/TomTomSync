@@ -91,13 +91,17 @@ final class WatchLock {
     init(url: URL = WatchLock.defaultURL) throws {
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         fd = open(url.path, O_CREAT | O_RDWR | O_CLOEXEC, 0o600)
-        // A lock file that can't be created must not stop the sync.
+        // Where locking itself doesn't work (the file can't be created, or the
+        // home folder is on a volume without flock), syncing goes on without
+        // it: never being able to sync is worse than the rare collision.
         guard fd >= 0 else { return }
-        if flock(fd, LOCK_EX | LOCK_NB) != 0, errno == EWOULDBLOCK {
-            Darwin.close(fd)
-            fd = -1
-            throw TransportError.busy
-        }
+        var result: Int32
+        repeat { result = flock(fd, LOCK_EX | LOCK_NB) } while result != 0 && errno == EINTR
+        guard result != 0 else { return }
+        let taken = errno == EWOULDBLOCK
+        Darwin.close(fd)
+        fd = -1
+        if taken { throw TransportError.busy }
     }
 
     /// The lock also goes when the process exits or crashes.
