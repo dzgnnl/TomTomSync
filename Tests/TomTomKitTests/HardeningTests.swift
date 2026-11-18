@@ -76,3 +76,26 @@ import Testing
         #expect(!d.watchConnected && d.unsupportedProductID == nil)
     }
 }
+
+@Suite struct WatchLockTests {
+    @Test func oneConnectionAtATime() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("ttsync-\(UUID().uuidString)/watch.lock")
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+
+        let first = try WatchLock(url: url)
+        #expect { try WatchLock(url: url) } throws: { error in
+            if case TransportError.busy = error { return true }
+            return false
+        }
+        first.release()
+        _ = try WatchLock(url: url)
+    }
+
+    @Test func aLockThatIsDroppedIsReleased() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("ttsync-\(UUID().uuidString)/watch.lock")
+        defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+
+        do { _ = try WatchLock(url: url) }
+        _ = try WatchLock(url: url)
+    }
+}

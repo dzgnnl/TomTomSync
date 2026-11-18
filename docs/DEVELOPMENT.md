@@ -103,6 +103,9 @@ SIGN_IDENTITY="Developer ID Application: Name (TEAMID)" NOTARY_PROFILE=<notaryto
 
 The watches are USB HID devices with vendor ID `0x1390`. TomTomSync uses
 `IOHIDDevice`, so it needs no root, libusb or driver detaching.
+One process talks to the watch at a time: a connection holds a lock on
+`/tmp/nl.dzgn.TomTomSync.watch.lock`, and a second one fails
+with "The watch is in use".
 
 | Product ID | Watches | Packet / read / write size |
 |---|---|---|
