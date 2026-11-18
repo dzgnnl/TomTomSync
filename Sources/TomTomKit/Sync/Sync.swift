@@ -219,7 +219,12 @@ public enum TimeSync {
     static func backupURL(for watch: Watch, in folder: URL, pending: Bool) -> URL {
         // The serial comes from the device, so only letters and digits reach the file name.
         let serial = String((watch.transport.serialNumber ?? "").filter { $0.isASCII && ($0.isLetter || $0.isNumber) }.prefix(32))
-        return folder.appendingPathComponent("settings-\(serial.isEmpty ? "watch" : serial).\(pending ? "pending" : "bin")")
+        return folder.appendingPathComponent("settings-\(serial.isEmpty ? "unknown" : serial).\(pending ? "pending" : "bin")")
+    }
+
+    /// Without a serial number a backup can't be tied to one watch.
+    private static func hasSerial(_ watch: Watch) -> Bool {
+        backupURL(for: watch, in: URL(fileURLWithPath: "/"), pending: false).lastPathComponent != "settings-unknown.bin"
     }
 
     private static func finishBackup(for watch: Watch, in folder: URL) {
@@ -230,24 +235,23 @@ public enum TimeSync {
 
     /// A settings write that was cut off (cable pulled) leaves its backup
     /// behind. If the watch no longer holds a usable settings file, the backup
-    /// is written back.
+    /// is written back. A watch without a serial number is left alone: its
+    /// backup could be another watch's.
     static func restoreIfInterrupted(watch: Watch, backups: URL, log: SyncLog) throws {
         let pending = backupURL(for: watch, in: backups, pending: true)
-        guard let saved = try? Data(contentsOf: pending) else { return }
+        guard hasSerial(watch), let saved = try? Data(contentsOf: pending) else { return }
         let original = [UInt8](saved)
         guard (try? WatchSettings(data: original))?.utcOffset != nil else {
             try? FileManager.default.removeItem(at: pending)   // not a backup we can trust
             return
         }
-        do {
-            guard try WatchSettings(data: watch.readFile(FileID.manifest)).utcOffset == nil else {
-                finishBackup(for: watch, in: backups)   // the watch has a complete settings file
-                return
-            }
-        } catch let e as TransportError {
-            throw e   // the watch is gone again; try at the next connection
-        } catch {
-            // Missing or damaged on the watch: restore below.
+        // Restore only when the file is known to be gone or damaged; any other
+        // error (the watch unplugged again, a garbled reply) is for the next sync.
+        var onWatch: [UInt8]?
+        do { onWatch = try watch.readFile(FileID.manifest) } catch WatchError.fileError(op: "open", _, _) {}
+        if let onWatch, (try? WatchSettings(data: onWatch))?.utcOffset != nil {
+            finishBackup(for: watch, in: backups)   // the watch has a complete settings file
+            return
         }
         try watch.writeVerified(FileID.manifest, original)
         finishBackup(for: watch, in: backups)

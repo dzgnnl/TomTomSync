@@ -217,6 +217,40 @@ private func activityID(_ n: Int) -> UInt32 { FileID.ttbinType | UInt32(n) }
         #expect(!FileManager.default.fileExists(atPath: backups.appendingPathComponent("settings-AB1234C56789.pending").path))
     }
 
+    @Test func leavesTheWatchAloneWhenItsSettingsCannotBeChecked() throws {
+        let mac = TimeZone.current.secondsFromGMT()
+        let backups = try tempRoot()
+        defer { try? FileManager.default.removeItem(at: backups) }
+        let pending = backups.appendingPathComponent("settings-AB1234C56789.pending")
+
+        // A garbled reply while reading says nothing about the file on the watch.
+        let fake = FakeWatch()
+        fake.files[FileID.manifest] = manifest(offset: mac)
+        try Data(manifest(offset: mac + 3600)).write(to: pending)
+        fake.shortReplies = [0x05]
+        #expect(throws: WatchError.self) { try TimeSync.sync(watch: Watch(transport: fake), backups: backups, log: quiet) }
+        #expect(fake.written.isEmpty)
+        #expect(FileManager.default.fileExists(atPath: pending.path))
+
+        // A watch without a serial number: the backup may belong to another watch.
+        let nameless = FakeWatch()
+        nameless.serialNumber = nil
+        nameless.files[FileID.manifest] = [0x85, 0x00, 0x09, 0x00, 1, 2, 3]
+        try Data(manifest(offset: mac + 3600)).write(to: backups.appendingPathComponent("settings-unknown.pending"))
+        #expect(throws: WatchError.self) { try TimeSync.sync(watch: Watch(transport: nameless), backups: backups, log: quiet) }
+        #expect(nameless.written.isEmpty)
+    }
+
+    @Test func restoresWhenTheSettingsFileIsGone() throws {
+        let mac = TimeZone.current.secondsFromGMT()
+        let backups = try tempRoot()
+        defer { try? FileManager.default.removeItem(at: backups) }
+        let fake = FakeWatch()
+        try Data(manifest(offset: mac)).write(to: backups.appendingPathComponent("settings-AB1234C56789.pending"))
+        #expect(try !TimeSync.sync(watch: Watch(transport: fake), backups: backups, log: quiet))
+        #expect(fake.files[FileID.manifest] == manifest(offset: mac))
+    }
+
     @Test func refusesASettingsFileItDoesNotUnderstand() throws {
         let fake = FakeWatch()
         let backups = try tempRoot()
