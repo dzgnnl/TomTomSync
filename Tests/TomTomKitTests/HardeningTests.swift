@@ -99,3 +99,49 @@ import Testing
         _ = try WatchLock(url: url)
     }
 }
+
+@Suite struct OAuthCallbackTests {
+    /// The redirect goes to "localhost", which can mean 127.0.0.1 or ::1.
+    @Test(arguments: ["127.0.0.1", "[::1]"]) func answersOnBothLoopbackAddresses(host: String) async throws {
+        let port = UInt16.random(in: 20_000..<60_000)
+        let query = try await LocalCallbackServer.waitForCallback(port: port, state: "s3", timeout: 10) {
+            Task {
+                try? await Task.sleep(for: .milliseconds(200))
+                _ = try? await URLSession.shared.data(from: URL(string: "http://\(host):\(port)/callback?state=s3&code=abc")!)
+            }
+        }
+        #expect(query["code"] == "abc")
+    }
+
+    /// An IPv4 address of this Mac that is not loopback.
+    private static func networkAddress() -> String? {
+        var list: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&list) == 0 else { return nil }
+        defer { freeifaddrs(list) }
+        var p = list
+        while let i = p {
+            defer { p = i.pointee.ifa_next }
+            guard let a = i.pointee.ifa_addr, a.pointee.sa_family == UInt8(AF_INET),
+                  i.pointee.ifa_flags & UInt32(IFF_LOOPBACK) == 0, i.pointee.ifa_flags & UInt32(IFF_UP) != 0 else { continue }
+            var host = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+            if getnameinfo(a, socklen_t(a.pointee.sa_len), &host, socklen_t(host.count), nil, 0, NI_NUMERICHOST) == 0 {
+                return String(cString: host)
+            }
+        }
+        return nil
+    }
+
+    /// Only this Mac may deliver the login: nothing answers on a network address.
+    @Test func ignoresOtherNetworkInterfaces() async throws {
+        guard let lan = Self.networkAddress() else { return }   // no network: nothing to test
+        let port = UInt16.random(in: 20_000..<60_000)
+        await #expect(throws: StravaError.self) {
+            _ = try await LocalCallbackServer.waitForCallback(port: port, state: "s3", timeout: 2) {
+                Task {
+                    try? await Task.sleep(for: .milliseconds(200))
+                    _ = try? await URLSession.shared.data(from: URL(string: "http://\(lan):\(port)/callback?state=s3&code=abc")!)
+                }
+            }
+        }
+    }
+}

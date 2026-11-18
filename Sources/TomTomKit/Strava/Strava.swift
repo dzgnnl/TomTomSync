@@ -346,9 +346,11 @@ public final class StravaClient: @unchecked Sendable {
 enum LocalCallbackServer {
     /// Requests without the expected `state` get a 400 and are otherwise ignored.
     static func waitForCallback(port: UInt16, state: String, timeout: TimeInterval = 300, started: @escaping @Sendable () -> Void) async throws -> [String: String] {
+        // The redirect goes to "localhost", which a browser may resolve to
+        // 127.0.0.1 or ::1: listen on the loopback interface, both families.
         let params = NWParameters.tcp
-        params.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: NWEndpoint.Port(rawValue: port)!)
-        let listener = try NWListener(using: params)
+        params.requiredInterfaceType = .loopback
+        let listener = try NWListener(using: params, on: NWEndpoint.Port(rawValue: port)!)
         let queue = DispatchQueue(label: "TomTomKit.oauth")
 
         return try await withCheckedThrowingContinuation { (cont: CheckedContinuation<[String: String], Error>) in
