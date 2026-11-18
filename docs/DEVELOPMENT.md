@@ -131,7 +131,7 @@ File-operation errors are at payload offset 16. Startup sequence:
 |---|---|
 | `0x0091xxxx` | Activities (ttbin) |
 | `0x00010100` | GPS QuickFix: download `https://gpsquickfix.services.tomtom.com/fitness/sifgps.f2p{3,7}enc.ee` (the 14-day file is gone), write it, verify it, then send `1d` |
-| `0x00850000` | Settings, little-endian: `u16 type, u16 count, {u16 index, u32 value}…`; index 169 = UTC offset in seconds |
+| `0x00850000` | Settings, little-endian: `u16 type, u16 count, {u16 index, u32 value}…`; index 169 = UTC offset in seconds. Rewritten as a whole, so the original is first saved in `~/Library/Application Support/TomTomSync/settings-<serial>.bin` and written back if the update fails or was cut off |
 | `0x00B80000`–`0x00B8000E` | Routes ("trails"), one per file; see [Routes](#routes) |
 
 ## ttbin format

@@ -16,6 +16,8 @@ final class FakeWatch: WatchTransport {
     var undeletable: Set<UInt32> = []
     /// Stores something else than what was written.
     var corruptsWrites = false
+    /// Only the next file that is written is stored wrongly.
+    var corruptsNextWrite = false
     /// Message types answered with an empty payload.
     var shortReplies: Set<UInt8> = []
     /// The cable is pulled after this many more requests.
@@ -26,6 +28,7 @@ final class FakeWatch: WatchTransport {
     private(set) var isClosed = false
 
     private var reply: [UInt8]?
+    private var corruptingFile: UInt32?
     private var listing: [UInt32] = []
     private var readOffset: [UInt32: Int] = [:]
 
@@ -67,6 +70,7 @@ final class FakeWatch: WatchTransport {
             respond(fileReply(id, error: files[id] == nil || unreadable.contains(id) ? 1 : 0))
         case 0x02:   // open for writing: replaces the file
             files[id] = []; written.append(id)
+            if corruptsNextWrite { corruptsNextWrite = false; corruptingFile = id } else { corruptingFile = nil }
             respond(fileReply(id))
         case 0x0c:   // close
             respond(fileReply(id))
@@ -84,7 +88,7 @@ final class FakeWatch: WatchTransport {
             respond(r + data, type: 0x09)
         case 0x04:   // write: id, data
             let data = Array(payload.dropFirst(4))
-            files[id, default: []] += corruptsWrites ? data.map { ~$0 } : data
+            files[id, default: []] += corruptsWrites || corruptingFile == id ? data.map { ~$0 } : data
             respond([0, 0, 0, 0] + payload.prefix(4))
         case 0x11:   // first file
             listing = files.keys.sorted().reversed()   // the watch lists in no particular order
